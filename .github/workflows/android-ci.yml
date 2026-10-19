@@ -1,4 +1,3 @@
-
 name: Android Release
 
 on:
@@ -109,34 +108,24 @@ jobs:
           roots = [pathlib.Path("lab"), pathlib.Path("input-target")]
 
           for root in roots:
-              candidates = [
-                  root / "build.gradle",
-                  root / "build.gradle.kts"
-              ]
-              build_file = next(
-                  (path for path in candidates if path.is_file()),
-                  None
-              )
+              candidates = [root / "build.gradle", root / "build.gradle.kts"]
+              build_file = next((path for path in candidates if path.is_file()), None)
 
               if build_file is None:
-                  raise SystemExit(
-                      f"Missing build.gradle or build.gradle.kts in {root}"
-                  )
+                  raise SystemExit(f"Missing build.gradle or build.gradle.kts in {root}")
 
               content = build_file.read_text(encoding="utf-8")
-
               content, code_count = re.subn(
                   r"(\bversionCode\s*(?:=\s*)?)\d+",
                   lambda m: m.group(1) + os.environ["VERSION_CODE"],
                   content,
-                  count=1
+                  count=1,
               )
-
               content, name_count = re.subn(
                   r'(\bversionName\s*(?:=\s*)?")[^"]*(")',
                   lambda m: m.group(1) + os.environ["VERSION_NAME"] + m.group(2),
                   content,
-                  count=1
+                  count=1,
               )
 
               if code_count != 1 or name_count != 1:
@@ -147,7 +136,6 @@ jobs:
 
               build_file.write_text(content, encoding="utf-8")
               print(f"Updated {build_file}")
-
           PY
 
       - name: Build and test signed Release APKs
@@ -162,16 +150,56 @@ jobs:
 
           for name in KEYSTORE_BASE64 KEY_ALIAS STORE_PASSWORD KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
-              echo "::error::Missing GitHub Secret: $name"
+              case "$name" in
+                KEYSTORE_BASE64) secret_name="ANDROID_KEYSTORE_BASE64" ;;
+                KEY_ALIAS) secret_name="ANDROID_KEY_ALIAS" ;;
+                STORE_PASSWORD) secret_name="ANDROID_KEYSTORE_PASSWORD" ;;
+                KEY_PASSWORD) secret_name="ANDROID_KEY_PASSWORD" ;;
+              esac
+              echo "::error::Missing GitHub Secret: ${secret_name}"
               exit 1
             fi
           done
 
           KEYSTORE_FILE="$RUNNER_TEMP/release-key.jks"
-          trap 'rm -f "$KEYSTORE_FILE"' EXIT
-
+          trap 'rm -f "$KEYSTORE_FILE" "$RUNNER_TEMP/keystore-preflight.err"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
           test -s "$KEYSTORE_FILE"
+
+          python3 - <<'PY'
+          import os
+          import sys
+
+          secrets = {
+              "STORE_PASSWORD": "ANDROID_KEYSTORE_PASSWORD",
+              "KEY_PASSWORD": "ANDROID_KEY_PASSWORD",
+          }
+          failed = False
+          for env_name, secret_name in secrets.items():
+              value = os.environ.get(env_name, "")
+              if not value:
+                  print(f"::error::GitHub Secret {secret_name} is empty.")
+                  failed = True
+              elif any(ord(ch) < 0x20 or ord(ch) > 0x7E for ch in value):
+                  print(
+                      f"::error::GitHub Secret {secret_name} contains non-ASCII or "
+                      "non-printable characters. The current Android signing path "
+                      "requires a compatible ASCII password. The secret value was not printed."
+                  )
+                  failed = True
+          if failed:
+              sys.exit(1)
+          PY
+
+          if ! keytool -list \
+            -keystore "$KEYSTORE_FILE" \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            >/dev/null 2>"$RUNNER_TEMP/keystore-preflight.err"; then
+            echo "::error::Keystore preflight failed. Check that ANDROID_KEYSTORE_BASE64 is the intended keystore, ANDROID_KEYSTORE_PASSWORD is its exact store password, and ANDROID_KEY_ALIAS exists. No password or alias value was printed."
+            exit 1
+          fi
+          echo "Keystore store-password and alias check passed."
 
           gradle --no-daemon \
             :lab:lint \
@@ -197,35 +225,25 @@ jobs:
 
           output_dir = Path("release-files")
           output_dir.mkdir(parents=True, exist_ok=True)
-
           modules = {
               "lab": Path("lab/build/outputs/apk/release"),
               "input-target": Path("input-target/build/outputs/apk/release"),
           }
-
           copied = []
 
           for module, directory in modules.items():
               apks = sorted(directory.rglob("*.apk")) if directory.is_dir() else []
-
               if not apks:
                   raise SystemExit(f"No Release APK found in {directory}")
-
               for index, apk in enumerate(apks, start=1):
-                  if len(apks) == 1:
-                      filename = f"{module}-release.apk"
-                  else:
-                      filename = f"{module}-{index}-{apk.stem}.apk"
-
+                  filename = f"{module}-release.apk" if len(apks) == 1 else f"{module}-{index}-{apk.stem}.apk"
                   destination = output_dir / filename
                   shutil.copy2(apk, destination)
                   copied.append(destination)
                   print(f"Collected {destination}")
 
           if len(copied) < 2:
-              raise SystemExit(
-                  "Expected APKs from both lab and input-target"
-              )
+              raise SystemExit("Expected APKs from both lab and input-target")
           PY
 
           sha256sum release-files/*.apk > release-files/SHA256SUMS.txt
@@ -234,10 +252,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           test -x "$APKSIGNER"
-
           for apk in release-files/*.apk; do
             echo "Verifying $apk"
             "$APKSIGNER" verify --verbose "$apk"
@@ -250,7 +266,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           gh release create "v${VERSION}" \
             release-files/* \
             --repo "$GITHUB_REPOSITORY" \
