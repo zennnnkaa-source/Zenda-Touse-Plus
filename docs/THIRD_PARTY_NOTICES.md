@@ -23,3 +23,8 @@ Before publishing or distributing a non-internal release:
 5. Decide whether Option B is acceptable for distribution; if not, exclude it from release builds or choose a verified replacement.
 
 The current ZIP is a feasibility POC. It is not a public release and does not include signing keys or production credentials.
+
+
+## Phase 3 upstream behavior reference
+
+The notification UX was researched against RikkaApps/Shizuku `AdbPairingTutorialActivity.kt`, `AdbPairingService.kt`, and `StartWirelessAdbViewHolder.kt`. No Shizuku source code or artwork was copied into this project. Shizuku main-app code files are Apache-2.0; the separate Shizuku-API project is MIT. Links and the license distinction are recorded in `RESEARCH.md`. Existing `libadb-android` is still dual-licensed GPL-3.0-or-later OR Apache-2.0; a complete dependency/license and security review is required before public release.

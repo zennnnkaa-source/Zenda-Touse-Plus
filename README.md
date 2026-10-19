@@ -1,7 +1,7 @@
 # Zenda Touse Plus — InputBridge (continuing in the original Phase 1 project)
 
 **Product prototype:** InputBridge Activation & Input Feasibility Lab  
-**Status:** Continuing the user's requested Phase 2 Native Project Foundation & CI work in this same repository. The latest source revision still needs a fresh GitHub Actions run. The user reports the current app flows are usable; end-to-end input delivery remains explicitly unverified until the separate Test Target records an event.
+**Status:** Continuing Phase 3 notification-based Wireless ADB pairing in the same repository. The latest source revision still needs a fresh GitHub Actions run. The user reports the current app flows are usable; end-to-end input delivery remains explicitly unverified until the separate Test Target records an event.
 
 Phase 1 is a proof-of-concept, not the production mapper. It intentionally separates:
 
@@ -29,12 +29,12 @@ The permanent product name in this phase remains **InputBridge** (per the Phase 
 - Structural validator: **0 errors, 1 warning** (the missing Gradle Wrapper files; the workflow downloads pinned Gradle instead).
 - 26 standalone Kotlin assertions for the pure input-policy validator (including bounded tap/swipe requests): **passed**. This is not an Android compile, Gradle test, or device test.
 - Latest user-provided GitHub log reached Release APK packaging but failed while signing with `Password is not ASCII`; this is a signing configuration issue, not evidence of a clean Release build.
-- Latest navigation/Direct flow edit: structural audit rerun with 0 errors and one missing-Gradle-Wrapper warning; a Gradle/Android compile has not been run for these newest edits.
+- Phase 3 review (2026-10-20): corrected timeout scheduling, bounded retries and endpoint lifetime, rejected stale discovery callbacks, secured internal broadcasts on API 30–32, unified ADB manager ownership, added mDNS multicast-lock lifecycle handling and an Android 16 local-network permission path. Source-level wiring was reviewed; a Gradle/Android compile has not been run for these newest edits.
 - Shizuku, Direct ADB mDNS discovery, automatic connect/helper bootstrap and target event delivery: **not device-verified for this revision**.
 
 ## Required validation — do not skip
 
-1. Apply this ZIP over the same GitHub repository and open **Actions → Phase 2 Native Foundation CI**. A green CI run is the first build/test evidence for this revision; no green run is included with this ZIP.
+1. Apply this ZIP over the same GitHub repository and open **Actions → Phase 3 Wireless Pairing CI**. A green CI run is the first build/test evidence for this revision; no green run is included with this ZIP.
 2. Download both debug APKs from the workflow artifact and install **both** on a test Android 11+ device.
 3. Follow [`docs/TEST_PROTOCOL.md`](docs/TEST_PROTOCOL.md). Run the Shizuku flow and direct Wireless debugging flow independently. See [`docs/CAPABILITY_MATRIX.md`](docs/CAPABILITY_MATRIX.md) for version-specific evidence labels.
 4. Confirm the test target's event list shows the expected tap/key/mouse event. A pairing success, ADB shell `id`, or helper UID alone is **not** proof that input injection works.
@@ -63,7 +63,8 @@ These paths are expected destinations only; no APKs were produced in the environ
 
 ```text
 Zenda_Touse_Plus_Phase1/ (same repository as Phase 1)
-├── .github/workflows/android-ci.yml
+├── .github/workflows/phase1-build-test.yml  # Phase 3 lint/tests/debug APK build
+├── .github/workflows/android-ci.yml          # Release/maintenance workflow
 ├── gradle/libs.versions.toml
 ├── lab/                  # Shizuku + direct ADB POC
 ├── input-target/         # real-input event capture target
@@ -77,7 +78,7 @@ Zenda_Touse_Plus_Phase1/ (same repository as Phase 1)
 - No game/anti-cheat compatibility is promised; only test with the dedicated target app or another target you are authorized to test. Do not attempt to bypass anti-cheat.
 - No telemetry, analytics, or pairing-code logging is included intentionally.
 - Do not publish or redistribute a production/release APK until the third-party dependency license and security review in `docs/THIRD_PARTY_NOTICES.md` is complete.
-- This is still the original Phase 1 repository being advanced in place per the user's explicit Phase 2 request; no separate Phase 2 project is created. Phase 2 is not marked PASS until the current revision passes CI. The `UNVERIFIED` input status is intentional: shell UID/helper response is not proof of target event delivery.
+- This is still the original repository being advanced in place; no separate phase project is created. Phase 3 is not marked PASS until the current revision passes CI. The `UNVERIFIED` input status is intentional: shell UID/helper response is not proof of target event delivery.
 
 
 ## AndroidX foundation added in-place
@@ -88,3 +89,10 @@ Zenda_Touse_Plus_Phase1/ (same repository as Phase 1)
 - The navigation shell has Home, Shizuku, Direct, Diagnostics, and Settings destinations.
 
 The foundation is intentionally layered into the existing `:lab` module. The `:input-target` module remains a separate app because separating the input receiver is necessary to test actual event delivery.
+
+
+## Phase 3 — Notification-based Wireless ADB pairing
+
+The Direct route starts a dedicated pairing service when notifications are available. The notification begins in a searching state and gains a RemoteInput action only after Android's `_adb-tls-pairing._tcp` service is discovered. Submissions must match the currently discovered pairing endpoint and session. The service forwards the six digits displayed by Android Wireless debugging to the existing libadb pairing implementation and reports its actual result; it neither reads nor generates the code. Discovery timeout, endpoint expiry/loss, stale callbacks, multicast-lock lifecycle, retries and protected internal status broadcasts have dedicated handling. Android 16 activation checks `NEARBY_WIFI_DEVICES` for the opt-in local-network restriction path.
+
+If notification permission is denied or the device/OEM does not show RemoteInput, use the existing in-app six-digit field. Pairing success only means the ADB pairing protocol accepted the code; it does not establish that a connection or input injection works. See `docs/RESEARCH.md` and `docs/THIRD_PARTY_NOTICES.md`.

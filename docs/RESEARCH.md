@@ -1,6 +1,6 @@
 # RESEARCH.md — InputBridge Phase 1
 
-**Research checked:** 2026-10-19  
+**Research checked:** 2026-10-20  
 **Scope:** Activation & Input Feasibility Lab only.  
 **Evidence labels:** `DOC-VERIFIED` = checked in a current primary source; `SOURCE-OBSERVED` = stated by upstream project source but unaudited; `STATIC-DESIGN` = implemented in source but not compiled; `UNVERIFIED-DEVICE` = requires installation on real Android hardware; `NOT-RUN` = no execution evidence.
 
@@ -93,3 +93,33 @@ Sources:
 - Android `NsdManager` supports DNS-SD service discovery and resolving service endpoints; discovery must be stopped when no longer needed and can fail depending on environment/network. The app watches the separate `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` service types and does not hardcode ports: https://developer.android.com/reference/android/net/nsd/NsdManager
 - Navigation Compose provides `currentBackStackEntryAsState()` as reactive state when the top destination changes. The tab bar now compares the active route directly rather than checking all ancestors: https://developer.android.com/reference/kotlin/androidx/navigation/compose/currentBackStackEntryAsState.composable
 - None of these references proves mDNS discovery or direct ADB pairing works on a given OEM device. Automatic Direct flow remains `EXPERIMENTAL / UNVERIFIED-DEVICE` until device tests pass.
+
+
+## 11. Phase 3 — Shizuku-style notification pairing (researched 2026-10-19)
+
+### Upstream source observations
+
+- Shizuku's main application, not Shizuku-API, owns the Wireless debugging pairing flow. The current upstream files inspected were [`AdbPairingTutorialActivity.kt`](https://github.com/RikkaApps/Shizuku/blob/master/manager/src/main/java/moe/shizuku/manager/adb/AdbPairingTutorialActivity.kt), [`AdbPairingService.kt`](https://github.com/RikkaApps/Shizuku/blob/master/manager/src/main/java/moe/shizuku/manager/adb/AdbPairingService.kt), and [`StartWirelessAdbViewHolder.kt`](https://github.com/RikkaApps/Shizuku/blob/master/manager/src/main/java/moe/shizuku/manager/home/StartWirelessAdbViewHolder.kt).
+- `AdbPairingTutorialActivity` checks notification/channel availability and starts a foreground pairing service; its Developer Options button launches `Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS` and supplies the Wireless debugging preference key.
+- `AdbPairingService` creates a dedicated notification channel, searches for the pairing service, updates the same notification when a pairing endpoint appears, and attaches `android.app.RemoteInput` to a notification action. The `PendingIntent` is mutable on Android 12+ so the system can attach the RemoteInput result. It reads the submitted value with `RemoteInput.getResultsFromIntent(intent)`, then invokes the actual `AdbPairingClient` with the discovered port and user-entered code. It reports protocol success/failure separately.
+- `StartWirelessAdbViewHolder` selects the notification tutorial on ordinary displays and the in-app pairing dialog in a multi-display context. [Issue #2114](https://github.com/RikkaApps/Shizuku/issues/2114) documents an OEM/Meta Quest case where notification RemoteInput is suppressed and recommends a fallback in-app dialog. The issue's report is device-specific; it is not evidence that all OEMs suppress RemoteInput.
+- The explicitly requested `AdbPairDialogFragment.kt` path returned 404 in the current upstream tree, so its implementation was not treated as verified from that guessed path. The current source and issue were used to confirm the fallback concept rather than copying a stale file path.
+- Android's [ADB documentation](https://developer.android.com/tools/adb) describes `_adb-tls-pairing._tcp` / `_adb-tls-connect._tcp` service discovery and notes that mDNS discovery can fail on networks that do not support it. Pairing and connection endpoints are distinct and ports are dynamic.
+
+### Phase 3 implementation in this repository
+
+- Added `AdbPairingNotificationService`, started by the foreground user action, with an ongoing search notification and dynamic action availability only after a pairing endpoint is discovered. It submits the actual RemoteInput value through the existing `AdbConnectionManager.pairNow(host, port, code)` backed by `libadb-android`; it does not fake the code or substitute a TCP connect for pairing.
+- Pairing notification uses a mutable `PendingIntent` on Android 12+ only for the RemoteInput action, immutable intents for ordinary actions, a dedicated channel, explicit stop/retry actions, a bounded 3-minute discovery timeout, stale-session rejection, and duplicate-submission protection. The code is not logged or persisted.
+- `MainActivity` receives a package-scoped result broadcast and updates the Direct state. Pair success triggers discovery of the current connection endpoint; it does not imply shell or input delivery success. Existing in-app code entry remains available as a fallback when notifications are denied or the OEM does not expose inline RemoteInput.
+- The service is declared as `connectedDevice` foreground work and declares the corresponding permission plus network-state permissions. Android/OEM background and notification restrictions can still prevent notification display or inline input; the in-app path is the supported fallback.
+- `AdbServiceDiscovery` manages `WifiManager.MulticastLock` for Android 12 and earlier and Android 13 devices below T extension 7, then releases it with the discovery lifecycle. The platform reference says those versions need a multicast lock to receive mDNS packets. See [NsdManager API reference](https://developer.android.com/reference/android/net/nsd/NsdManager).
+- Android 16 introduces an opt-in local-network restriction for compatibility testing. The current target SDK remains 36; activation checks/request `NEARBY_WIFI_DEVICES` only on API 36 when not already granted and warns if denied. This does not claim support for future target SDK 37's separate `ACCESS_LOCAL_NETWORK` requirement. See [Android local network permission guidance](https://developer.android.com/privacy-and-security/local-network-permission).
+- Discovery run generations prevent late mDNS resolve callbacks from previous scans from overwriting a newer pairing/connection endpoint.
+
+### License handling
+
+Shizuku's main application source states Apache-2.0 for code files, while the separate Shizuku-API repository is MIT. This implementation follows the observed interaction pattern but does not copy Shizuku source code or assets. Existing `libadb-android` remains dual-licensed GPL-3.0-or-later OR Apache-2.0 and its full transitive license review remains a release blocker; see `THIRD_PARTY_NOTICES.md`.
+
+### Validation status
+
+Source-level implementation and pure policy/state tests were added. Static structure/YAML/XML checks can be run in this environment, but the Android Gradle build, RemoteInput behavior on an OEM notification shade, and a real successful pairing session require CI and a physical Android 11+ device. These are not marked as passed here.

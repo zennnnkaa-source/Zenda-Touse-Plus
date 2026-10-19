@@ -7,6 +7,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
@@ -24,6 +26,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import dev.zenda.inputbridge.lab.adb.AdbConnectionManager
+import dev.zenda.inputbridge.lab.adb.AdbPairingNotificationService
 import dev.zenda.inputbridge.lab.adb.AdbDiscoveredEndpoint
 import dev.zenda.inputbridge.lab.adb.AdbServiceDiscovery
 import dev.zenda.inputbridge.lab.adb.AdbServiceKind
@@ -65,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private var directSettingsLaunched = false
     private var directSettingsWasPaused = false
     private lateinit var notificationPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var localNetworkPermissionLauncher: ActivityResultLauncher<String>
     private val uiPreferences by lazy { UiPreferencesRepository(applicationContext) }
     private val historyRepository by lazy { ProbeHistoryRepository(applicationContext) }
     @Volatile private var probeService: IProbeService? = null
@@ -76,6 +80,39 @@ class MainActivity : ComponentActivity() {
     @Volatile private var shizukuHelperPort: Int? = null
     @Volatile private var shizukuHelperToken: String? = null
     private var args: Shizuku.UserServiceArgs? = null
+    private var pairingResultReceiverRegistered = false
+    private val pairingResultReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            val received = intent ?: return
+            if (received.action !in setOf(AdbPairingNotificationService.ACTION_RESULT, AdbPairingNotificationService.ACTION_STATE)) return
+            val success = received.action == AdbPairingNotificationService.ACTION_RESULT && received.getBooleanExtra(AdbPairingNotificationService.EXTRA_SUCCESS, false)
+            val cancelled = received.action == AdbPairingNotificationService.ACTION_RESULT && received.getBooleanExtra(AdbPairingNotificationService.EXTRA_CANCELLED, false)
+            val pairingAttempted = received.action == AdbPairingNotificationService.ACTION_RESULT && received.getBooleanExtra(AdbPairingNotificationService.EXTRA_PAIRING_ATTEMPTED, false)
+            val message = received.getStringExtra(AdbPairingNotificationService.EXTRA_MESSAGE).orEmpty()
+            runOnUiThread {
+                adbStatus.value = message
+                if (received.action == AdbPairingNotificationService.ACTION_STATE) {
+                    directStage.value = "pairing"
+                } else if (cancelled) {
+                    directStage.value = "ready_for_code"
+                } else if (success) {
+                    directPairingSucceeded = true
+                    directStage.value = "paired_waiting_connection"
+                    if (pairingAttempted) recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.SUCCEEDED)
+                    // Do not restart foreground Activity discovery while the system pairing Settings screen is still open.
+                    if (!(directSettingsLaunched && directSettingsWasPaused)) {
+                        ensureDirectDiscovery().start()
+                        attemptDirectConnectionIfReady()
+                    }
+                } else {
+                    directPairingSucceeded = false
+                    directStage.value = "ready_for_code"
+                    if (pairingAttempted) recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.FAILED)
+                    if (!(directSettingsLaunched && directSettingsWasPaused)) ensureDirectDiscovery().restart()
+                }
+            }
+        }
+    }
 
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_REQUEST_CODE) runOnUiThread {
@@ -126,11 +163,35 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         openDirectTabRequest.value = intent?.getBooleanExtra(EXTRA_OPEN_DIRECT_TAB, false) == true
-        notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // Direct activation must remain usable even if notification permission is denied.
-            showDirectWaitingNotification()
-            launchDeveloperOptions()
+        notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            // Inline notification input is optional; the in-app code field remains the fallback.
+            if (!granted) {
+                adbStatus.value = "Notification permission denied. Use the in-app pairing field; notification input is unavailable."
+            }
+            requestLocalNetworkPermissionThenContinue()
         }
+        localNetworkPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted && Build.VERSION.SDK_INT >= 36) {
+                adbStatus.value = "Nearby devices permission was denied. Android 16 local-network restrictions may block mDNS/ADB; retry with permission enabled if discovery or connection fails."
+            }
+            continueDirectActivationAfterPermissions()
+        }
+        val pairingFilter = IntentFilter().apply {
+            addAction(AdbPairingNotificationService.ACTION_RESULT)
+            addAction(AdbPairingNotificationService.ACTION_STATE)
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(pairingResultReceiver, pairingFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(
+                pairingResultReceiver,
+                pairingFilter,
+                AdbPairingNotificationService.internalBroadcastPermission(this),
+                null
+            )
+        }
+        pairingResultReceiverRegistered = true
         ensureDirectNotificationChannel()
         Shizuku.addBinderReceivedListener(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
@@ -190,23 +251,29 @@ class MainActivity : ComponentActivity() {
         if (directSettingsLaunched && directSettingsWasPaused) {
             directSettingsLaunched = false
             directSettingsWasPaused = false
-            directStage.value = "ready_for_code"
-            adbStatus.value = if (pairingEndpoint.value != null) {
-                "Pairing screen detected. Enter the six-digit code shown in Android Settings."
-            } else {
-                "Waiting for pairing details. In Developer options, open Wireless debugging → Pair device with pairing code; leave that dialog open and return here."
+            // Do not overwrite a pairing state received from the notification while Settings was foregrounded.
+            if (directStage.value in setOf("waiting_settings", "ready_for_code", "waiting_for_pairing")) {
+                directStage.value = "ready_for_code"
+                adbStatus.value = if (pairingEndpoint.value != null) {
+                    "Pairing service detected. The Android code can be submitted from the notification or the in-app fallback."
+                } else {
+                    "Waiting for pairing details. Keep Android Wireless debugging → Pair device with pairing code open."
+                }
             }
             ensureDirectDiscovery().start()
-            if (pairingEndpoint.value != null) {
-                showDirectNotification("Pairing screen detected", "Return to InputBridge and enter the six-digit code from Android Settings.")
-            } else {
-                showDirectWaitingNotification()
+            if (pairingEndpoint.value != null && Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                adbStatus.value = "Notifications are disabled; use the in-app six-digit code field."
             }
         }
     }
 
     override fun onPause() {
-        if (directSettingsLaunched) directSettingsWasPaused = true
+        if (directSettingsLaunched) {
+            directSettingsWasPaused = true
+            // The foreground pairing service owns background discovery; release the Activity's
+            // duplicate browser/multicast lock while the system Settings screen is open.
+            directDiscovery?.stopDiscovery()
+        }
         super.onPause()
     }
 
@@ -221,6 +288,10 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         directDiscovery?.close()
         directDiscovery = null
+        if (pairingResultReceiverRegistered) {
+            try { unregisterReceiver(pairingResultReceiver) } catch (_: Exception) { }
+            pairingResultReceiverRegistered = false
+        }
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
         Shizuku.removeBinderDeadListener(binderDeadListener)
         Shizuku.removeRequestPermissionResultListener(permissionListener)
@@ -401,9 +472,7 @@ class MainActivity : ComponentActivity() {
             connectionServiceEndpoint.value = null
             directPairingSucceeded = false
             directConnectAttempted.set(false)
-            ensureDirectDiscovery().restart()
-            showDirectWaitingNotification()
-            launchDeveloperOptions()
+            requestLocalNetworkPermissionThenContinue()
             return
         }
         if (directStage.value in setOf("pairing", "paired_waiting_connection", "connecting", "connected", "helper_ready")) {
@@ -416,12 +485,49 @@ class MainActivity : ComponentActivity() {
         directConnectAttempted.set(false)
         directStage.value = "waiting_settings"
         adbStatus.value = "Waiting for Android Wireless debugging pairing. Developer options will open next."
-        ensureDirectDiscovery().restart()
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            showDirectWaitingNotification()
-            launchDeveloperOptions()
+            requestLocalNetworkPermissionThenContinue()
+        }
+    }
+
+    /** Ask for Android 16's opt-in local-network compatibility permission before starting discovery. */
+    private fun requestLocalNetworkPermissionThenContinue() {
+        if (Build.VERSION.SDK_INT >= 36 &&
+            checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+        ) {
+            localNetworkPermissionLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+            return
+        }
+        continueDirectActivationAfterPermissions()
+    }
+
+    private fun continueDirectActivationAfterPermissions() {
+        if (Build.VERSION.SDK_INT >= 36 &&
+            checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+        ) {
+            adbStatus.value = "Nearby devices permission is not granted. Android 16 local-network restrictions may block mDNS/ADB; enable the permission if discovery or connection fails."
+        }
+        // Re-start discovery after the permission decision so callbacks use the current access state.
+        ensureDirectDiscovery().restart()
+        startPairingNotificationServiceIfAllowed()
+        launchDeveloperOptions()
+    }
+
+    private fun startPairingNotificationServiceIfAllowed() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            adbStatus.value = "Notification input is unavailable because notification permission is denied. Enter the code in the app instead."
+            return
+        }
+        if (!AdbPairingNotificationService.areNotificationsAvailable(this)) {
+            adbStatus.value = "InputBridge notifications or the pairing channel are disabled. Use the in-app six-digit code field or enable notifications in system Settings."
+            return
+        }
+        try {
+            AdbPairingNotificationService.start(this)
+        } catch (error: Exception) {
+            adbStatus.value = "Could not start notification pairing (${error.javaClass.simpleName}). Use the in-app code field instead."
         }
     }
 
@@ -494,11 +600,40 @@ class MainActivity : ComponentActivity() {
                         adbStatus.value = message
                     }
                 }
+            },
+            onServiceLost = { kind, serviceName ->
+                runOnUiThread {
+                    when (kind) {
+                        AdbServiceKind.PAIRING -> {
+                            val endpoint = pairingEndpoint.value
+                            if (endpoint != null && (serviceName.isBlank() || endpoint.serviceName == serviceName)) {
+                                pairingEndpoint.value = null
+                                if (directStage.value in setOf("waiting_settings", "waiting_for_pairing", "ready_for_code")) {
+                                    adbStatus.value = "The temporary pairing service disappeared. Reopen the Android pairing dialog and retry discovery."
+                                }
+                            }
+                        }
+                        AdbServiceKind.CONNECTION -> {
+                            val endpoint = connectionServiceEndpoint.value
+                            if (endpoint != null && (serviceName.isBlank() || endpoint.serviceName == serviceName)) {
+                                connectionServiceEndpoint.value = null
+                                if (directPairingSucceeded && directStage.value == "paired_waiting_connection") {
+                                    directConnectAttempted.set(false)
+                                    adbStatus.value = "The ADB connection endpoint changed or disappeared. Searching for the current port again."
+                                }
+                            }
+                        }
+                    }
+                }
             }
         ).also { directDiscovery = it }
     }
 
     private fun pairWithDiscoveredCode(code: String) {
+        if (directStage.value == "pairing" || AdbPairingNotificationService.isPairingSubmissionInProgress()) {
+            adbStatus.value = "A pairing request is already running. Wait for its result before submitting another code."
+            return
+        }
         if (!code.matches(Regex("\\d{6}"))) {
             adbStatus.value = "Enter exactly six digits from the Android pairing dialog. The code was not saved."
             directStage.value = "ready_for_code"
@@ -511,6 +646,7 @@ class MainActivity : ComponentActivity() {
             retryDirectDiscovery()
             return
         }
+        AdbPairingNotificationService.stop(this)
         directStage.value = "pairing"
         adbStatus.value = "Pairing with the discovered endpoint. The code is used only for this request."
         worker.execute {
@@ -611,16 +747,22 @@ class MainActivity : ComponentActivity() {
         synchronized(this) {
             val existing = adbManager
             if (existing != null) return existing
-            return AdbConnectionManager(applicationContext).also { adbManager = it }
+            return AdbConnectionManager.shared(applicationContext).also { adbManager = it }
         }
     }
 
     private fun pairDirectly(host: String, port: Int, code: String) {
+        if (directStage.value == "pairing" || AdbPairingNotificationService.isPairingSubmissionInProgress()) {
+            adbStatus.value = "A pairing request is already running. Wait for its result before submitting another code."
+            return
+        }
         if (!code.matches(Regex("\\d{6}"))) {
             recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.FAILED)
             adbStatus.value = "Pairing failed: enter exactly six digits. Code was cleared from the form."
             return
         }
+        AdbPairingNotificationService.stop(this)
+        directStage.value = "pairing"
         worker.execute {
             val report = try {
                 val ok = manager().pairNow(host.trim(), port, code)
@@ -631,7 +773,10 @@ class MainActivity : ComponentActivity() {
                 recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.FAILED)
                 "Pairing failed: ${e.javaClass.simpleName}. Recheck host, pairing port and the temporary code."
             }
-            runOnUiThread { adbStatus.value = report }
+            runOnUiThread {
+                adbStatus.value = report
+                if (directStage.value == "pairing") directStage.value = "ready_for_code"
+            }
         }
     }
 
@@ -676,6 +821,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun disconnectDirectly() {
+        if (directStage.value == "pairing" || AdbPairingNotificationService.isPairingSubmissionInProgress()) {
+            adbStatus.value = "Pairing is still in progress. Wait for the actual pairing result before disconnecting."
+            return
+        }
+        AdbPairingNotificationService.stop(this)
         worker.execute {
             val helperPort = directHelperPort
             val helperToken = directHelperToken
@@ -684,7 +834,12 @@ class MainActivity : ComponentActivity() {
             if (helperPort != null && helperToken != null) {
                 try { LocalHelperClient.request(helperPort, helperToken, "STOP") } catch (_: Exception) { }
             }
-            val old = synchronized(this) { adbManager.also { adbManager = null } }
+            val activityManager = synchronized(this) { adbManager.also { adbManager = null } }
+            val sharedManager = AdbConnectionManager.releaseShared()
+            val old = activityManager ?: sharedManager
+            if (activityManager != null && sharedManager != null && activityManager !== sharedManager) {
+                try { sharedManager.close() } catch (_: Exception) { }
+            }
             try { old?.close() } catch (_: Exception) { }
             connectedEndpoint = null
             directPairingSucceeded = false
@@ -829,7 +984,7 @@ class MainActivity : ComponentActivity() {
         private const val SHIZUKU_REQUEST_CODE = 7421
         private const val DIRECT_NOTIFICATION_ID = 7422
         private const val DIRECT_NOTIFICATION_CHANNEL = "direct_activation"
-        private const val EXTRA_OPEN_DIRECT_TAB = "dev.zenda.inputbridge.OPEN_DIRECT_TAB"
+        const val EXTRA_OPEN_DIRECT_TAB = "dev.zenda.inputbridge.OPEN_DIRECT_TAB"
     }
 }
 

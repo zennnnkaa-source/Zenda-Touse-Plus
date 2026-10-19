@@ -42,6 +42,20 @@ import javax.crypto.spec.GCMParameterSpec
  * This code has not yet been audited or validated on a physical device.
  */
 class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
+    companion object {
+        @Volatile private var sharedInstance: AdbConnectionManager? = null
+
+        /** Share one ADB identity/connection manager between Activity and pairing Service in this process. */
+        fun shared(context: Context): AdbConnectionManager = synchronized(this) {
+            sharedInstance ?: AdbConnectionManager(context.applicationContext).also { sharedInstance = it }
+        }
+
+        /** Detach the process singleton before closing, so a later activation can create a fresh manager. */
+        fun releaseShared(): AdbConnectionManager? = synchronized(this) {
+            sharedInstance.also { sharedInstance = null }
+        }
+    }
+
     private val appContext = context.applicationContext
     private val identityFile = File(appContext.filesDir, "adb-identity-v1.bin")
     private val privateKey: PrivateKey
