@@ -1,7 +1,7 @@
-# Zenda Touse Plus — Phase 1
+# Zenda Touse Plus — InputBridge (continuing in the original Phase 1 project)
 
 **Product prototype:** InputBridge Activation & Input Feasibility Lab  
-**Status:** source and CI scaffold prepared; Phase 1 is **not passed yet** because no Android build or real-device test has been executed in the authoring environment.
+**Status:** Phase 1 feasibility work remains open pending release-signing correction and real-device evidence. The AndroidX native-foundation and UI improvements are being added **in this same repository**, not as a separate Phase 2 project.
 
 Phase 1 is a proof-of-concept, not the production mapper. It intentionally separates:
 
@@ -10,7 +10,7 @@ Phase 1 is a proof-of-concept, not the production mapper. It intentionally separ
 
 The permanent product name in this phase remains **InputBridge** (per the Phase 0 decision). The project root combines it with the umbrella project: **Zenda Touse Plus**.
 
-## What this Phase 1 POC currently contains
+## What the existing project contains
 
 - Runtime Shizuku Binder/permission/UID checks, Binder lifecycle callbacks, and an isolated `UserService` probe.
 - Experimental direct ADB pairing using `libadb-android`; pairing and connection ports are entered separately.
@@ -20,12 +20,15 @@ The permanent product name in this phase remains **InputBridge** (per the Phase 
 - Separate test target with bounded event log, key down/up fields, pointer capture control, touch pointers, mouse motion axes, button and scroll state.
 - Unit tests for endpoint, pairing-code and fixed-command validation.
 - GitHub Actions workflow to set up a pinned Gradle distribution + Android SDK, run lint/unit tests, assemble both debug APKs and upload them as an artifact.
+- Native AndroidX application shell: Jetpack Compose + Material 3, AndroidX Navigation Compose, lifecycle-aware state collection, a persistent light/dark theme preference using DataStore, and a Room-backed bounded history containing only fixed probe labels/outcomes.
 
 ## Current validation snapshot
 
 - Structural validator: **0 errors, 1 warning** (the missing Gradle Wrapper files; the workflow downloads pinned Gradle instead).
 - 26 standalone Kotlin assertions for the pure input-policy validator (including bounded tap/swipe requests): **passed**. This is not an Android compile, Gradle test, or device test.
-- Android build, lint, Gradle/JUnit tests, APK assembly, Shizuku, direct ADB and real event delivery: **not run / unverified**.
+- Latest user-provided GitHub log reached Release APK packaging but failed while signing with `Password is not ASCII`; this is a signing configuration issue, not evidence of a clean Release build.
+- New AndroidX UI/foundation edits: structural audit **PASS**; a Gradle compile has not been run for these latest edits.
+- Shizuku, direct ADB and real event delivery: **unverified on physical device**.
 
 ## Required validation — do not skip
 
@@ -39,7 +42,7 @@ The permanent product name in this phase remains **InputBridge** (per the Phase 
 
 This starter deliberately does not contain a guessed `gradle-wrapper.jar`. The available environment did not provide an intact wrapper binary or Android SDK, so the CI workflow installs Gradle **9.6.0** explicitly instead of depending on an unverified wrapper. This avoids presenting a partial wrapper as valid.
 
-The workflow installs JDK 17, Android platform `android-36` and build-tools `36.0.0`, then runs:
+The CI workflow installs JDK 17, Android platform `android-37` and build-tools `36.0.0`, then runs:
 
 ```bash
 gradle :lab:lint :input-target:lint \
@@ -57,7 +60,7 @@ These paths are expected destinations only; no APKs were produced in the environ
 ## Folder map
 
 ```text
-Zenda_Touse_Plus_Phase1/
+Zenda_Touse_Plus_Phase1/ (same repository as Phase 1)
 ├── .github/workflows/android-ci.yml
 ├── gradle/libs.versions.toml
 ├── lab/                  # Shizuku + direct ADB POC
@@ -73,3 +76,13 @@ Zenda_Touse_Plus_Phase1/
 - No telemetry, analytics, or pairing-code logging is included intentionally.
 - Do not publish or redistribute a production/release APK until the third-party dependency license and security review in `docs/THIRD_PARTY_NOTICES.md` is complete.
 - **Do not move to Phase 2 automatically.** Phase 1 exit criteria remain blocked until a real input path reaches the test target and results are recorded.
+
+
+## AndroidX foundation added in-place
+
+- `ui/` owns the reusable Material 3 screens and theme.
+- `data/preferences/UiPreferencesRepository.kt` persists only the user's theme preference with DataStore.
+- `data/local/` contains Room-backed recent probe history. The database stores fixed provider/action/outcome enums and timestamps only; it never stores pairing codes, ADB keys, command output, or arbitrary user input.
+- The navigation shell has Home, Shizuku, Direct, Diagnostics, and Settings destinations.
+
+The foundation is intentionally layered into the existing `:lab` module. The `:input-target` module remains a separate app because separating the input receiver is necessary to test actual event delivery.

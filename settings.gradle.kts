@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Zenda-Touse-Plus-Phase1-InputBridge-Lab"
+rootProject.name = "Zenda-Touse-Plus-InputBridge"
 include(":lab", ":input-target")

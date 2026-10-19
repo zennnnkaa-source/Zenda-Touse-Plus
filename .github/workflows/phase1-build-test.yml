@@ -1,0 +1,72 @@
+name: Phase 1 Build Test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase1-build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.6.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Install required Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;36.0.0" "platform-tools"
+
+      - name: Validate project structure
+        run: python3 .github/scripts/validate_android_project.py .
+
+      - name: Lint, test and assemble both apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon \
+            :lab:lint \
+            :input-target:lint \
+            :lab:testDebugUnitTest \
+            :input-target:testDebugUnitTest \
+            :lab:assembleDebug \
+            :input-target:assembleDebug \
+            --stacktrace
+
+      - name: Upload debug APKs
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zenda-phase1-debug-apks
+          path: |
+            lab/build/outputs/apk/debug/*.apk
+            input-target/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

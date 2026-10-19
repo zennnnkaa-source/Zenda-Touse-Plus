@@ -6,46 +6,28 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.graphics.Point
 import android.os.Bundle
-import android.os.SystemClock
 import android.os.IBinder
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import rikka.shizuku.Shizuku
+import androidx.lifecycle.lifecycleScope
 import dev.zenda.inputbridge.lab.adb.AdbConnectionManager
 import dev.zenda.inputbridge.lab.adb.LocalHelperClient
+import dev.zenda.inputbridge.lab.data.local.ProbeAction
+import dev.zenda.inputbridge.lab.data.local.ProbeHistoryRepository
+import dev.zenda.inputbridge.lab.data.local.ProbeOutcome
+import dev.zenda.inputbridge.lab.data.local.ProbeProvider
+import dev.zenda.inputbridge.lab.data.local.ProbeRunEntity
+import dev.zenda.inputbridge.lab.data.preferences.UiPreferencesRepository
 import dev.zenda.inputbridge.lab.shizuku.ProbeUserService
+import dev.zenda.inputbridge.lab.ui.LabScreen
+import dev.zenda.inputbridge.lab.ui.theme.InputBridgeTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -57,6 +39,10 @@ class MainActivity : ComponentActivity() {
     private val shizukuStatus = mutableStateOf("Checking Shizuku binder…")
     private val helperStatus = mutableStateOf("Helper not bound")
     private val adbStatus = mutableStateOf("Not connected")
+    private val darkThemeState = mutableStateOf(true)
+    private val recentRuns = mutableStateOf<List<ProbeRunEntity>>(emptyList())
+    private val uiPreferences by lazy { UiPreferencesRepository(applicationContext) }
+    private val historyRepository by lazy { ProbeHistoryRepository(applicationContext) }
     @Volatile private var probeService: IProbeService? = null
     @Volatile private var adbManager: AdbConnectionManager? = null
     @Volatile private var connectedEndpoint: String? = null
@@ -70,7 +56,9 @@ class MainActivity : ComponentActivity() {
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         if (requestCode == SHIZUKU_REQUEST_CODE) runOnUiThread {
             refreshShizukuStatus()
-            helperStatus.value = if (grantResult == PackageManager.PERMISSION_GRANTED) {
+            val granted = grantResult == PackageManager.PERMISSION_GRANTED
+            recordProbe(ProbeProvider.SHIZUKU, ProbeAction.PERMISSION_REQUEST, if (granted) ProbeOutcome.SUCCEEDED else ProbeOutcome.FAILED)
+            helperStatus.value = if (granted) {
                 "Permission granted; bind the probe helper next."
             } else "Permission denied by Shizuku."
         }
@@ -90,6 +78,7 @@ class MainActivity : ComponentActivity() {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             probeService = IProbeService.Stub.asInterface(service)
+            recordProbe(ProbeProvider.SHIZUKU, ProbeAction.HELPER_BIND, ProbeOutcome.SUCCEEDED)
             worker.execute {
                 val report = try {
                     val remote = probeService ?: throw IllegalStateException("Binder was empty")
@@ -105,6 +94,7 @@ class MainActivity : ComponentActivity() {
             probeService = null
             shizukuHelperPort = null
             shizukuHelperToken = null
+            recordProbe(ProbeProvider.SHIZUKU, ProbeAction.HELPER_BIND, ProbeOutcome.FAILED)
             runOnUiThread { helperStatus.value = "Helper disconnected. Bind again after checking Shizuku." }
         }
     }
@@ -117,37 +107,39 @@ class MainActivity : ComponentActivity() {
         args = Shizuku.UserServiceArgs(ComponentName(this, ProbeUserService::class.java))
             .daemon(false).tag("inputbridge-phase1-probe").version(1)
         refreshShizukuStatus()
+        lifecycleScope.launch {
+            uiPreferences.darkThemeEnabled.collect { enabled -> darkThemeState.value = enabled }
+        }
+        lifecycleScope.launch {
+            historyRepository.observeRecent(20).collect { records -> recentRuns.value = records }
+        }
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                primary = Color(0xFF78DCC8),
-                secondary = Color(0xFF9EB7FF),
-                background = Color(0xFF0B1020),
-                surface = Color(0xFF141C2D),
-                onBackground = Color(0xFFEAF0FF),
-                onSurface = Color(0xFFEAF0FF)
-            )) {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    LabScreen(
-                        shizukuStatus = shizukuStatus.value,
-                        helperStatus = helperStatus.value,
-                        adbStatus = adbStatus.value,
-                        onRefreshShizuku = { refreshShizukuStatus() },
-                        onRequestShizukuPermission = { requestShizukuPermission() },
-                        onBindHelper = { bindProbeHelper() },
-                        onUnbindHelper = { unbindProbeHelper() },
-                        onOpenTarget = { openTarget() },
-                        onGetHelperResult = { refreshHelperResult() },
-                        onShizukuTapProbe = { runShizukuTapProbe() },
-                        onShizukuSwipeProbe = { runShizukuSwipeProbe() },
-                        onPair = { host, port, code -> pairDirectly(host, port, code) },
-                        onConnect = { host, port -> connectDirectly(host, port) },
-                        onStartAdbHelper = { startDirectHelper() },
-                        onStopAdbHelper = { stopDirectHelper() },
-                        onDisconnect = { disconnectDirectly() },
-                        onAdbTapProbe = { runAdbTapProbe() },
-                        onAdbSwipeProbe = { runAdbSwipeProbe() }
-                    )
-                }
+            InputBridgeTheme(darkTheme = darkThemeState.value) {
+                LabScreen(
+                    shizukuStatus = shizukuStatus.value,
+                    helperStatus = helperStatus.value,
+                    adbStatus = adbStatus.value,
+                    recentRuns = recentRuns.value,
+                    darkTheme = darkThemeState.value,
+                    onToggleTheme = {
+                        lifecycleScope.launch(Dispatchers.IO) { uiPreferences.toggleDarkTheme() }
+                    },
+                    onRefreshShizuku = { refreshShizukuStatus() },
+                    onRequestShizukuPermission = { requestShizukuPermission() },
+                    onBindHelper = { bindProbeHelper() },
+                    onUnbindHelper = { unbindProbeHelper() },
+                    onOpenTarget = { openTarget() },
+                    onGetHelperResult = { refreshHelperResult() },
+                    onShizukuTapProbe = { runShizukuTapProbe() },
+                    onShizukuSwipeProbe = { runShizukuSwipeProbe() },
+                    onPair = { host, port, code -> pairDirectly(host, port, code) },
+                    onConnect = { host, port -> connectDirectly(host, port) },
+                    onStartAdbHelper = { startDirectHelper() },
+                    onStopAdbHelper = { stopDirectHelper() },
+                    onDisconnect = { disconnectDirectly() },
+                    onAdbTapProbe = { runAdbTapProbe() },
+                    onAdbSwipeProbe = { runAdbSwipeProbe() }
+                )
             }
         }
     }
@@ -194,6 +186,7 @@ class MainActivity : ComponentActivity() {
             } else if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 refreshShizukuStatus()
             } else {
+                recordProbe(ProbeProvider.SHIZUKU, ProbeAction.PERMISSION_REQUEST, ProbeOutcome.STARTED)
                 Shizuku.requestPermission(SHIZUKU_REQUEST_CODE)
             }
         } catch (e: Exception) {
@@ -212,9 +205,11 @@ class MainActivity : ComponentActivity() {
         }
         try {
             val userServiceArgs = args ?: throw IllegalStateException("UserService configuration missing")
+            recordProbe(ProbeProvider.SHIZUKU, ProbeAction.HELPER_BIND, ProbeOutcome.STARTED)
             Shizuku.bindUserService(userServiceArgs, serviceConnection)
             helperStatus.value = "Bind requested; waiting for helper callback…"
         } catch (e: Exception) {
+            recordProbe(ProbeProvider.SHIZUKU, ProbeAction.HELPER_BIND, ProbeOutcome.FAILED)
             helperStatus.value = "Bind failed: ${e.javaClass.simpleName}: ${e.message ?: "no details"}"
         }
     }
@@ -226,6 +221,7 @@ class MainActivity : ComponentActivity() {
         shizukuHelperToken = null
         try { Shizuku.unbindUserService(serviceArgs, serviceConnection, true) } catch (_: Exception) { }
         probeService = null
+        recordProbe(ProbeProvider.SHIZUKU, ProbeAction.HELPER_UNBIND, ProbeOutcome.SUCCEEDED)
         helperStatus.value = "Helper unbound and local helper stop requested."
     }
 
@@ -246,7 +242,9 @@ class MainActivity : ComponentActivity() {
                 "dev.zenda.inputbridge.target",
                 "dev.zenda.inputbridge.target.InputCaptureActivity"
             ))
+            recordProbe(ProbeProvider.TEST_TARGET, ProbeAction.OPEN_TARGET, ProbeOutcome.SUCCEEDED)
         } catch (e: Exception) {
+            recordProbe(ProbeProvider.TEST_TARGET, ProbeAction.OPEN_TARGET, ProbeOutcome.FAILED)
             adbStatus.value = "Target could not open. Install InputBridge Test Target APK beside the Lab."
         }
     }
@@ -299,12 +297,14 @@ class MainActivity : ComponentActivity() {
                 val requestStart = SystemClock.elapsedRealtime()
                 val result = LocalHelperClient.request(port, token, command)
                 val roundTripMs = SystemClock.elapsedRealtime() - requestStart
+                recordProbe(ProbeProvider.SHIZUKU, if (command.startsWith("TAP ")) ProbeAction.TAP_PROBE else ProbeAction.SWIPE_PROBE, ProbeOutcome.UNVERIFIED)
                 runOnUiThread {
                     helperStatus.value = "$result · helper round-trip ${roundTripMs}ms (not end-to-end latency). Inspect the target event log; command completion alone is not an input-delivery PASS."
                 }
             } catch (e: Exception) {
                 shizukuHelperPort = null
                 shizukuHelperToken = null
+                recordProbe(ProbeProvider.SHIZUKU, if (command.startsWith("TAP ")) ProbeAction.TAP_PROBE else ProbeAction.SWIPE_PROBE, ProbeOutcome.FAILED)
                 runOnUiThread {
                     helperStatus.value = "Shizuku helper probe failed: ${e.javaClass.simpleName}. Binder, local socket and target event delivery remain separate checks."
                 }
@@ -334,15 +334,18 @@ class MainActivity : ComponentActivity() {
 
     private fun pairDirectly(host: String, port: Int, code: String) {
         if (!code.matches(Regex("\\d{6}"))) {
+            recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.FAILED)
             adbStatus.value = "Pairing failed: enter exactly six digits. Code was cleared from the form."
             return
         }
         worker.execute {
             val report = try {
                 val ok = manager().pairNow(host.trim(), port, code)
+                recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, if (ok) ProbeOutcome.SUCCEEDED else ProbeOutcome.FAILED)
                 if (ok) "Pairing succeeded; this does not prove a shell connection or input injection. Enter the current connection port next."
                 else "Pairing failed. Confirm host, pairing port, code, and Wireless debugging pairing screen."
             } catch (e: Exception) {
+                recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.PAIR, ProbeOutcome.FAILED)
                 "Pairing failed: ${e.javaClass.simpleName}. Recheck host, pairing port and the temporary code."
             }
             runOnUiThread { adbStatus.value = report }
@@ -370,6 +373,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 "ADB connection/shell probe failed: ${e.javaClass.simpleName}. Check Wi‑Fi, current connection port and pairing state."
             }
+            recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.CONNECT, if (report.startsWith("ADB shell probe returned:")) ProbeOutcome.SUCCEEDED else ProbeOutcome.FAILED)
             runOnUiThread { adbStatus.value = report }
         }
     }
@@ -386,6 +390,7 @@ class MainActivity : ComponentActivity() {
             val old = synchronized(this) { adbManager.also { adbManager = null } }
             try { old?.close() } catch (_: Exception) { }
             connectedEndpoint = null
+            recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.DISCONNECT, ProbeOutcome.SUCCEEDED)
             runOnUiThread { adbStatus.value = "Disconnected; ADB session closed and helper stop attempted." }
         }
     }
@@ -423,12 +428,15 @@ class MainActivity : ComponentActivity() {
                 if (response != null && response!!.matches(Regex("UID\\|[0-9]+"))) {
                     directHelperPort = port
                     directHelperToken = token
+                    recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.HELPER_START, ProbeOutcome.SUCCEEDED)
                     val uid = response!!.substringAfter('|')
                     "Experimental app_process helper responded and reports UID $uid. Verify a tap in the target before treating this path as working."
                 } else {
+                    recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.HELPER_START, ProbeOutcome.FAILED)
                     "Bootstrap command was sent, but the helper socket did not return a valid UID (${lastError?.javaClass?.simpleName ?: "no response"}). A failed helper may remain idle for up to five minutes."
                 }
             } catch (e: Exception) {
+                recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.HELPER_START, ProbeOutcome.FAILED)
                 "Helper bootstrap failed: ${e.javaClass.simpleName}. Pair/connect may work even if app_process or loopback IPC is blocked."
             } finally {
                 directHelperStarting = false
@@ -453,8 +461,10 @@ class MainActivity : ComponentActivity() {
         worker.execute {
             val report = try {
                 LocalHelperClient.request(port, token, "STOP")
+                recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.HELPER_STOP, ProbeOutcome.SUCCEEDED)
                 "Experimental helper stop requested; its local session token was cleared from app state."
             } catch (e: Exception) {
+                recordProbe(ProbeProvider.DIRECT_ADB, ProbeAction.HELPER_STOP, ProbeOutcome.UNVERIFIED)
                 "Could not confirm helper stop (${e.javaClass.simpleName}); its idle lifetime is bounded to five minutes."
             }
             runOnUiThread { adbStatus.value = report }
@@ -485,112 +495,23 @@ class MainActivity : ComponentActivity() {
                 val requestStart = SystemClock.elapsedRealtime()
                 val output = LocalHelperClient.request(port, token, command)
                 val roundTripMs = SystemClock.elapsedRealtime() - requestStart
+                recordProbe(ProbeProvider.DIRECT_ADB, if (command.startsWith("TAP ")) ProbeAction.TAP_PROBE else ProbeAction.SWIPE_PROBE, ProbeOutcome.UNVERIFIED)
                 "Local helper replied to $description: ${output.take(240)}; helper round-trip ${roundTripMs}ms (not end-to-end latency). Inspect the target event log; a response is not an automatic input-delivery PASS."
             } catch (e: Exception) {
+                recordProbe(ProbeProvider.DIRECT_ADB, if (command.startsWith("TAP ")) ProbeAction.TAP_PROBE else ProbeAction.SWIPE_PROBE, ProbeOutcome.FAILED)
                 "Direct helper $description failed: ${e.javaClass.simpleName}. Inspect app_process/loopback policy; input delivery remains unverified."
             }
             runOnUiThread { adbStatus.value = report }
         }
     }
 
+
+    private fun recordProbe(provider: ProbeProvider, action: ProbeAction, outcome: ProbeOutcome) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { historyRepository.record(provider, action, outcome) }
+        }
+    }
+
     companion object { private const val SHIZUKU_REQUEST_CODE = 7421 }
 }
 
-@Composable
-private fun LabScreen(
-    shizukuStatus: String,
-    helperStatus: String,
-    adbStatus: String,
-    onRefreshShizuku: () -> Unit,
-    onRequestShizukuPermission: () -> Unit,
-    onBindHelper: () -> Unit,
-    onUnbindHelper: () -> Unit,
-    onOpenTarget: () -> Unit,
-    onGetHelperResult: () -> Unit,
-    onShizukuTapProbe: () -> Unit,
-    onShizukuSwipeProbe: () -> Unit,
-    onPair: (String, Int, String) -> Unit,
-    onConnect: (String, Int) -> Unit,
-    onStartAdbHelper: () -> Unit,
-    onStopAdbHelper: () -> Unit,
-    onDisconnect: () -> Unit,
-    onAdbTapProbe: () -> Unit,
-    onAdbSwipeProbe: () -> Unit
-) {
-    var host by remember { mutableStateOf("127.0.0.1") }
-    var pairingPort by remember { mutableStateOf("") }
-    var connectionPort by remember { mutableStateOf("") }
-    var pairingCode by remember { mutableStateOf("") }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        Text("InputBridge", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFF78DCC8))
-        Text("Zenda Touse Plus · Phase 1 Feasibility Lab", style = MaterialTheme.typography.titleMedium)
-        Text("POC only. Pairing, shell access and input delivery are separate results; no game compatibility is implied.", color = Color(0xFFA8B5CD), style = MaterialTheme.typography.bodyMedium)
-
-        LabCard("Option A · Shizuku (Primary)", shizukuStatus) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onRefreshShizuku, modifier = Modifier.weight(1f)) { Text("Check status") }
-                Button(onClick = onRequestShizukuPermission, modifier = Modifier.weight(1f)) { Text("Request permission") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onBindHelper, modifier = Modifier.weight(1f)) { Text("Bind helper") }
-                Button(onClick = onUnbindHelper, modifier = Modifier.weight(1f)) { Text("Unbind") }
-            }
-            Text("Helper: $helperStatus", style = MaterialTheme.typography.bodySmall, color = Color(0xFFB8C9E5))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onShizukuTapProbe, modifier = Modifier.weight(1f)) { Text("Test one tap") }
-                Button(onClick = onShizukuSwipeProbe, modifier = Modifier.weight(1f)) { Text("Test one swipe") }
-            }
-            Button(onClick = onGetHelperResult, modifier = Modifier.fillMaxWidth()) { Text("Read helper result") }
-        }
-
-        LabCard("Option B · Direct Wireless debugging", adbStatus) {
-            Text("Experimental. Keep both this app and Android's Pair device screen accessible. Use the current pair and connect ports; they are different and can change.", color = Color(0xFFA8B5CD), style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(value = host, onValueChange = { host = it.take(253) }, label = { Text("Device host / IP") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = pairingPort, onValueChange = { pairingPort = it.filter(Char::isDigit).take(5) }, label = { Text("Pairing port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = connectionPort, onValueChange = { connectionPort = it.filter(Char::isDigit).take(5) }, label = { Text("Connection port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
-            }
-            OutlinedTextField(value = pairingCode, onValueChange = { pairingCode = it.filter(Char::isDigit).take(6) }, label = { Text("Temporary 6-digit pairing code") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
-            Button(onClick = {
-                val code = pairingCode
-                pairingCode = ""
-                val port = pairingPort.toIntOrNull() ?: -1
-                onPair(host, port, code)
-            }, modifier = Modifier.fillMaxWidth(), enabled = pairingCode.length == 6 && (pairingPort.toIntOrNull()?.let { it in 1..65535 } == true)) { Text("Pair device") }
-            Button(onClick = { onConnect(host, connectionPort.toIntOrNull() ?: -1) }, modifier = Modifier.fillMaxWidth(), enabled = connectionPort.toIntOrNull()?.let { it in 1..65535 } == true) { Text("Connect + verify shell id") }
-            Button(onClick = onStartAdbHelper, modifier = Modifier.fillMaxWidth()) { Text("Bootstrap helper + verify UID") }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAdbTapProbe, modifier = Modifier.weight(1f)) { Text("Test one tap") }
-                Button(onClick = onAdbSwipeProbe, modifier = Modifier.weight(1f)) { Text("Test one swipe") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onStopAdbHelper, modifier = Modifier.weight(1f)) { Text("Stop helper") }
-                Button(onClick = onDisconnect, modifier = Modifier.weight(1f)) { Text("Disconnect") }
-            }
-        }
-
-        LabCard("Test target", "Use this separate app to inspect events actually delivered to an Activity.") {
-            Button(onClick = onOpenTarget, modifier = Modifier.fillMaxWidth()) { Text("Open InputBridge Test Target") }
-        }
-        Spacer(Modifier.height(12.dp))
-        Text("Safety: never share the temporary pairing code. The Lab does not log the code, does not persist it, and only allows fixed shell probes and bounded numeric tap/swipe requests.", color = Color(0xFFA8B5CD), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun LabCard(title: String, status: String, content: @Composable () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF141C2D))
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-            Text(status, style = MaterialTheme.typography.bodyMedium)
-            content()
-        }
-    }
-}

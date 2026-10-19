@@ -48,3 +48,13 @@ The POC encrypts serialized private-key bytes using AES-GCM and an Android Keyst
 ### D-020 — Phase 1 exit gate — LOCKED
 
 Do not start Phase 2 until (a) CI build/tests are recorded, (b) at least one of the two activation paths has been exercised on a physical Android 11+ device, and (c) a real event is observed in the separate test target. If no path succeeds, report the technical blocker and keep Phase 1 open.
+
+
+### D-015 In-place AndroidX UI foundation — LOCKED
+Use the existing root project and existing `:lab` + `:input-target` modules. Add an AndroidX Navigation Compose app shell and reusable Material 3 theme inside `:lab`; do not create a separate Phase 2 repository/project. The test target remains a distinct application because it must independently record delivered events.
+
+### D-016 Local preferences and probe history — LOCKED
+Use DataStore for the non-sensitive dark/light theme preference. Use Room for bounded probe history with only fixed provider/action/outcome values and timestamps. Never persist pairing codes, ADB key material, arbitrary command output, or raw user-entered host/port data. Retain only the newest 100 history rows.
+
+### D-017 Phase gate honesty — LOCKED
+In-place Phase 2 foundation work may proceed at the user's explicit request, but Phase 1 remains **OPEN / NOT PASSED** until CI and a real physical-device input-to-target result meet the existing exit criteria. A release signing failure does not count as an input feasibility result.

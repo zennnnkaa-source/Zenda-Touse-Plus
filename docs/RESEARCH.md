@@ -53,3 +53,21 @@ Phase 0 documents are preserved under [`phase0-snapshot/`](phase0-snapshot/). Th
 - Does CI resolve AGP, KGP, Compose BOM, Shizuku and JitPack dependencies without incompatibility?
 
 All of these remain open until CI/device evidence is recorded in [`FEASIBILITY_RESULTS.md`](FEASIBILITY_RESULTS.md).
+
+## 10. AndroidX Foundation re-check (2026-10-19)
+
+This research update informs the UI/foundation work added in-place to the existing Phase 1 repository; it does not prove the newest source compiles.
+
+| Component | Selected version | Evidence | Notes |
+|---|---|---|---|
+| AGP | 9.4.0 | [Official AGP 9.4.0 release notes](https://developer.android.google.cn/build/releases/agp-9-4-0-release-notes?hl=en) | Gradle 9.6.0, JDK 17 and Build Tools 36.0.0 are the official compatibility defaults; max API is 37. |
+| Compose BOM | 2026.08.00 | [Official Compose August 2026 release](https://android-developers.googleblog.com/2026/08/jetpack-compose-august-2026-release.html) | Compose 1.12 stable; requires compileSdk 37 and AGP 9.1.1 or newer. |
+| Navigation Compose | 2.10.1 | [AndroidX stable release list](https://developer.android.com/jetpack/androidx/versions/stable-channel?hl=en) | Stable release shown in September 2026. |
+| Lifecycle | 2.11.0 | [Lifecycle release notes](https://developer.android.com/jetpack/androidx/releases/lifecycle?authuser=56) | Stable release shown June 17, 2026; used for `lifecycleScope` and lifecycle-bound work. |
+| Room | 2.8.5 | [Room release guide](https://developer.android.com/jetpack/androidx/releases/room?hl=en) | KSP compiler configured; history stores enumerated probe labels only. |
+| DataStore | 1.2.1 | [DataStore release notes](https://developer.android.com/jetpack/androidx/releases/datastore?authuser=90) | Stable release; used for the local light/dark preference. |
+| KSP | 2.3.10 | [KSP requirements](https://kotlinlang.org/docs/ksp-overview.html) | Official Kotlin page lists support for Kotlin Gradle Plugin 2.2.10–2.3.x, AGP 8.12+, Gradle 8.13+ and JDK 17+. Actual build resolution remains pending. |
+
+### Important distinction
+
+The current app already used AndroidX Compose and Material 3 before this work. The change is an architecture/UI improvement (Navigation Compose, theme tokens, DataStore, Room), not a migration away from a non-AndroidX UI framework. A full Gradle build is still required to validate the combined AGP/Kotlin/KSP/Compose versions.
