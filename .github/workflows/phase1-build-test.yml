@@ -1,4 +1,4 @@
-name: Phase 1 Build Test
+name: Phase 2 Native Foundation CI
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: phase1-build-test-${{ github.ref }}
+  group: phase2-native-foundation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -64,7 +64,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: zenda-phase1-debug-apks
+          name: zenda-phase2-debug-apks
           path: |
             lab/build/outputs/apk/debug/*.apk
             input-target/build/outputs/apk/debug/*.apk

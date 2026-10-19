@@ -1,7 +1,7 @@
 # FEASIBILITY_RESULTS.md — Phase 1 Test Ledger
 
 **Last updated:** 2026-10-19  
-**Overall result:** `IN PROGRESS — NO PATH VERIFIED`.
+**Overall result:** `PHASE 2 FOUNDATION IN PROGRESS — INPUT DELIVERY STILL UNVERIFIED`.
 
 This file is an evidence log, not a prediction. An item can change to `PASS` only after observing the stated signal. Phase 0 explicitly contained no code/build/device tests; those original statements remain in `phase0-snapshot/`.
 
@@ -26,15 +26,15 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 | Shizuku permission request/listener | Implemented in Lab source | None | `NOT RUN` |
 | Shizuku UserService helper binding | POC implementation added | None | `NOT RUN` |
 | Shizuku shared helper + loopback tap/swipe | POC implementation added with coordinate/duration bounds and a shared helper runtime | None | `UNVERIFIED-DEVICE` |
-| Direct ADB pairing | POC wrapper and separate pairing-port field added | None | `NOT RUN / EXPERIMENTAL` |
-| Direct ADB connect + `id` | POC wrapper added; connect port separate | None | `NOT RUN` |
+| Direct ADB pairing | POC wrapper plus NSD discovery for `_adb-tls-pairing._tcp.`; normal UI takes only the six-digit code | No physical-device evidence | `EXPERIMENTAL / DEVICE UNVERIFIED` |
+| Direct ADB connect + `id` | NSD discovery for `_adb-tls-connect._tcp.` then automatic connect and `id`; manual host/port fallback retained | No physical-device evidence | `EXPERIMENTAL / DEVICE UNVERIFIED` |
 | Direct ADB helper bootstrap + loopback tap/swipe | POC bootstrap and shared `LocalHelperServer` added; no direct ADB input pipe | None | `UNVERIFIED-DEVICE` |
 | Test target real event capture | Native Activity source logs actual touch down/move/up, multi-pointer touch, KeyEvent, generic and captured pointer motion | None | `NOT RUN` |
 | Simultaneous injected gestures | Not implemented by the bounded shell-command helper; test target can log physical multi-touch only | None | `NOT IMPLEMENTED / OPEN EXPERIMENT` |
 | Timing | UI reports helper request round-trip time, not end-to-end input delivery latency | No repeated measurements yet | `SOURCE ONLY / NOT MEASURED` |
 | Port/code/command/helper-request test source | JUnit tests written; separate standalone Kotlin assertions also executed | 26 standalone policy assertions passed; Gradle/JUnit test task not run | `PARTIAL — policy assertions PASS; project test task NOT RUN` |
 | Kotlin source syntax pass | No parser/syntax diagnostics after source review | Host Kotlin 1.9 compiler cannot resolve Android and third-party APIs without Android SDK/dependencies; this is not a compile | `PARTIAL — syntax scan only` |
-| Lint + two APK assembly | Workflow written | No Actions run URL yet | `NOT RUN` |
+| Lint + two APK assembly | Phase 2 Native Foundation CI workflow targets SDK 36 and runs lint, unit tests, both debug assemblies | Latest revised source has not run in Actions yet | `NOT RUN` |
 
 ## 3. Required result matrix (fill after running `docs/TEST_PROTOCOL.md`)
 
@@ -59,4 +59,4 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 
 ## 5. Current blocker and phase decision
 
-The Phase 1 gate is **not met**. The structural validator reports 0 errors and 1 expected missing-wrapper warning, and 26 standalone Kotlin assertions of port/code/shell-command/helper-request policy passed. Those checks do not compile Android source or prove dependency/API compatibility. At present there is no Gradle/Android build proof, no physical-device test, and no target event log. The direct ADB option now follows the Phase 0 bootstrap-only decision in source, but the `app_process` class loading, detached launch, loopback connection, UID and input delivery are all unverified. If a path fails on the first device, record the exact observed failure, OS/build/OEM, log with secrets removed, and next minimal experiment. Do not edit status text to imply success and do not begin Phase 2 until the exit gate is met or the user explicitly changes the project plan.
+The original Phase 1 evidence gate remains open, but the user explicitly requested that Phase 2 foundation work continue in the same repository. The latest source adds route-state-driven tab selection, guided Developer Options launch, a waiting notification when notification permission is granted, NSD pairing/connection discovery, and an automatic Pair → Connect → helper path. These are source changes, not proof that mDNS resolves on the user’s OEM or that input is delivered. The CI workflow has not run against this latest revision; no Gradle/Android build proof or target event log is available in this authoring environment. If a path fails on the first device, record OS/build/OEM and a redacted log. Keep injection `UNVERIFIED` until the Test Target visibly reports the event.

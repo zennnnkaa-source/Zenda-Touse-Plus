@@ -85,3 +85,11 @@ Sources:
 - Compose August 2026 release: https://developer.android.com/blog/posts/what-s-new-in-the-jetpack-compose-august-26-release
 - AndroidX Lifecycle release notes: https://developer.android.com/jetpack/androidx/releases/lifecycle
 - AndroidX Navigation release notes: https://developer.android.com/jetpack/androidx/releases/navigation
+
+
+## 10. Phase 2 Navigation and Direct setup research (checked 2026-10-19)
+
+- Android Settings reference documents `Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS` as the public action for the Developer options screen. OEM Settings apps may vary, so a fallback to general Settings and clear manual directions remain necessary: https://developer.android.com/reference/android/provider/Settings#ACTION_APPLICATION_DEVELOPMENT_SETTINGS
+- Android `NsdManager` supports DNS-SD service discovery and resolving service endpoints; discovery must be stopped when no longer needed and can fail depending on environment/network. The app watches the separate `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` service types and does not hardcode ports: https://developer.android.com/reference/android/net/nsd/NsdManager
+- Navigation Compose provides `currentBackStackEntryAsState()` as reactive state when the top destination changes. The tab bar now compares the active route directly rather than checking all ancestors: https://developer.android.com/reference/kotlin/androidx/navigation/compose/currentBackStackEntryAsState.composable
+- None of these references proves mDNS discovery or direct ADB pairing works on a given OEM device. Automatic Direct flow remains `EXPERIMENTAL / UNVERIFIED-DEVICE` until device tests pass.

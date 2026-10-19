@@ -1,6 +1,6 @@
 # CAPABILITY_MATRIX.md — Android × Activation × Backend
 
-**As of:** 2026-10-19. This is a planning/evidence matrix, not a compatibility claim. Every runtime cell is currently `NOT TESTED` because neither an emulator nor a physical device was exercised from the authoring environment.
+**As of:** 2026-10-19. This is a planning/evidence matrix, not a compatibility claim. Runtime cells remain `NOT TESTED` because this authoring environment cannot exercise the updated source on a physical device. The user reports the existing app flow is usable, but the revised mDNS auto-discovery and target event delivery still need a fresh device check.
 
 Legend: `DOC` = mechanism documented by public API/protocol; `POC SOURCE` = code exists but is not compiled; `NOT TESTED` = no runtime evidence; `EXPERIMENTAL` = result must not be shown as available to end users.
 
@@ -26,8 +26,8 @@ The project uses `minSdk = 30` and `compileSdk = 36`. The build configuration ma
 | A — Shizuku | Shizuku permission | Actual permission result | POC SOURCE / NOT TESTED | Grant and deny on device |
 | A — Shizuku | UserService identity | `Os.getuid()` inside helper process | POC SOURCE / NOT TESTED | Callback + reported UID from remote helper |
 | A — Shizuku | Shared helper runtime | UserService starts shared `LocalHelperServer`; app sends loopback `TAP x y` | EXPERIMENTAL / NOT TESTED | `TOUCH DOWN` and `TOUCH UP` observed in target app |
-| B — Direct ADB | SPAKE2 pairing | Current pairing host/port + six-digit code | POC SOURCE / NOT TESTED | Library reports pair success on physical device |
-| B — Direct ADB | TLS ADB connect | Current connect port (not pair port) | POC SOURCE / NOT TESTED | Connection result and subsequent shell access |
+| B — Direct ADB | SPAKE2 pairing | NSD discovery of the current pairing endpoint + six-digit code; manual fallback | POC SOURCE / DEVICE UNVERIFIED | Library reports pair success on a physical device after NSD resolution |
+| B — Direct ADB | TLS ADB connect | NSD discovery of the separate current connection endpoint; manual fallback | POC SOURCE / DEVICE UNVERIFIED | Connection result and subsequent shell access on a physical device |
 | B — Direct ADB | Shell identity | Fixed `id` command | POC SOURCE / NOT TESTED | Non-empty output after a connected session |
 | B — Direct ADB | Shared helper runtime | Bootstrap `LocalHelperServer` via app_process; localhost token-authenticated `TAP x y` | EXPERIMENTAL / NOT TESTED | Helper UID response and actual target event, not bootstrap-command completion |
 | No privilege | Test target | Own-window KeyEvent/MotionEvent and pointer capture | POC SOURCE / NOT TESTED | Emulator/device with actual keyboard/mouse/controller |

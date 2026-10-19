@@ -58,3 +58,13 @@ Use DataStore for the non-sensitive dark/light theme preference. Use Room for bo
 
 ### D-017 Phase gate honesty — LOCKED
 In-place Phase 2 foundation work may proceed at the user's explicit request, but Phase 1 remains **OPEN / NOT PASSED** until CI and a real physical-device input-to-target result meet the existing exit criteria. A release signing failure does not count as an input feasibility result.
+
+
+### D-021 — In-place Phase 2 foundation — LOCKED
+Continue in the existing Phase 1 repository and modules. Phase 2 is a repository milestone, not a separate project or new root. CI must pass on the exact current source revision before Phase 2 is marked PASS.
+
+### D-022 — Destination-driven tab selection — LOCKED
+The selected navigation item is derived from the current Navigation Compose destination route (exact route equality). Top-level tabs pop to the root and do not restore saved tab stacks in this small five-tab shell, avoiding an indicator that lags the visible destination. A focused unit test guards the route policy.
+
+### D-023 — Guided Direct activation — PROVISIONAL
+The default Direct flow opens the public Developer options Settings action, posts an ongoing waiting notification only when notification permission allows it, and uses `NsdManager` to discover current ADB pairing and connection endpoints. The user manually supplies only the six-digit temporary code in the normal path. After pairing, the flow auto-attempts connection, shell identity check, and the existing helper bootstrap. Manual host/port recovery stays available. This flow is experimental until tested on supported physical devices; it must never mark input delivery verified merely because pairing or shell identity succeeded.

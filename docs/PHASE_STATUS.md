@@ -1,6 +1,6 @@
 # Phase Status — Zenda Touse Plus / InputBridge
 
-**As of:** 2026-10-19
+**As of:** 2026-10-19 (Phase 2 in-place revision)
 
 ## Status summary
 
@@ -8,45 +8,48 @@
 |---|---|
 | Umbrella project | Zenda Touse Plus |
 | Product prototype | InputBridge Activation & Input Feasibility Lab |
-| Repository strategy | Continue in the original Phase 1 repository; no separate Phase 2 project |
-| Phase 0 | **PASS (documents only)**; original documents preserved under `docs/phase0-snapshot/` |
-| Phase 1 feasibility gate | **OPEN / NOT PASSED** — latest release log reached APK packaging but signing failed with `Password is not ASCII`; physical-device target event is still undocumented |
-| In-place native foundation/UI work | **IMPLEMENTED IN SOURCE, NOT BUILD-VERIFIED** — AndroidX Navigation Compose, Material 3 app shell, DataStore theme setting, Room bounded probe history |
-| Structural project audit | **PASS: 0 errors, 1 warning** — the remaining warning is missing Gradle Wrapper files |
-| Latest UI/foundation Gradle build | **NOT RUN** in this authoring environment; no Android SDK or Gradle executable is installed locally |
-| GitHub Actions CI for latest changes | **PENDING** — must run after copying/committing the listed file updates |
-| Release signing | **BLOCKED** until the existing signing password/keystore setup is corrected; do not replace the signing key casually |
-| Shizuku → target input | **UNVERIFIED-DEVICE** |
-| Direct ADB pairing/connect/helper | **EXPERIMENTAL / PARTIALLY UNVERIFIED** |
-| Input delivery to target | **UNVERIFIED**; no PASS is inferred from helper response or shell UID |
+| Repository strategy | Continue in the existing repository; no separate Phase 2 project |
+| Phase 0 | **PASS (documents only)**; original records are preserved in `docs/phase0-snapshot/` |
+| Phase 1 app flow | **USER-REPORTED USABLE**; input delivery to the separate Test Target remains **UNVERIFIED** unless the target's event log visibly confirms it |
+| Current requested work | **Phase 2 — Native Project Foundation & CI**, implemented in-place with targeted navigation and Direct activation UX fixes |
+| Navigation selection fix | **IMPLEMENTED IN SOURCE; CI pending for this revision** — selected tab is derived from the exact current destination route |
+| Direct activation flow | **IMPLEMENTED IN SOURCE; DEVICE UNVERIFIED** — opens Developer options, shows a pairing-wait notification when allowed, detects mDNS pairing/connection endpoints, requests six-digit code, and then attempts Pair → Connect → Helper automatically |
+| Structural project audit | **PENDING FINAL AUDIT** for the latest changed source; earlier base archive audit had 0 errors and one missing-wrapper warning |
+| Gradle Wrapper | **MISSING** from source; CI installs Gradle 9.6.0 explicitly. A real wrapper binary must not be fabricated |
+| Latest Gradle build/test | **NOT RUN** in this authoring environment (no Android SDK or Gradle executable) |
+| GitHub Actions CI for newest revision | **PENDING** — run after using this ZIP in the existing repository |
+| Release signing | Separate issue: fix the existing keystore/password configuration if Release signing is requested; do not rotate the signing key casually |
+| Shizuku → target input | **UNVERIFIED-DEVICE**; UID 2000 proves shell identity only, not that the target received a MotionEvent |
+| Direct ADB mDNS + Pair → Connect + helper | **EXPERIMENTAL / DEVICE UNVERIFIED** |
+| Input delivery to target | **UNVERIFIED** until the target app visibly records the expected event |
 
-## What changed in-place
+## Phase 2 changes in this revision
 
-- Extracted the Compose interface out of `MainActivity.kt` into `ui/LabScreen.kt`.
-- Added a consistent Material 3 light/dark theme with semantic colors.
-- Added AndroidX Navigation Compose destinations: Home, Shizuku, Direct, Diagnostics, and Settings.
-- Added DataStore-backed local dark-theme preference.
-- Added Room-backed bounded event history. It stores only predefined provider/action/outcome values and timestamps; never pairing codes, key material, or raw command output.
-- Kept Shizuku and Direct ADB controls in the existing `:lab` module. The separate `:input-target` application remains separate by design for input-delivery tests.
-- Kept the original Phase 0 snapshot unchanged.
+- Bound bottom-navigation selection to the actual current destination route and use a predictable top-level navigation stack.
+- Made the Home Direct shortcut and Direct bottom tab begin the guided Direct activation flow only when starting from Idle/Failed. Navigating back to Direct while already waiting no longer resets discovery or reopens Settings unexpectedly.
+- Added `NsdManager` discovery for `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` so ports are not hardcoded or required in the normal path.
+- Added a six-digit code entry stage that appears after returning from Android Settings. The app never reads the code automatically or saves it.
+- Added an Android notification reminder while waiting, subject to the user's notification permission. The in-app waiting state remains visible if permission is denied.
+- After Pair succeeds, the app discovers the connection endpoint, attempts ADB connect and shell identity, then starts the existing bounded helper. Each step remains separately reported.
+- Kept manual host/port fallback in an expandable section for Android/OEM/network environments where mDNS discovery is unavailable.
+- Added local unit tests for navigation selection policy and ADB service-type/endpoint formatting.
 
-## Exact remaining gates
+## Phase 2 exit gates
 
-1. Run GitHub Actions on the newest source and resolve compile/lint/test errors. Structural inspection is not compilation evidence.
-2. Fix Release signing with the existing keystore and matching ASCII-compatible passwords, without leaking any secret into logs.
-3. Install both Debug APKs on an Android 11+ physical device.
-4. Test Shizuku and Direct ADB independently.
-5. Confirm the test target visibly records the expected event and document device model, Android build, date, steps, and a redacted result in `docs/FEASIBILITY_RESULTS.md`.
+1. Latest source passes GitHub Actions `lint`, `testDebugUnitTest`, and both `assembleDebug` tasks.
+2. Any future Wrapper inclusion uses a verified Wrapper generated by the pinned Gradle distribution; no placeholder JAR.
+3. Install both Debug APKs on an Android 11+ device and exercise tab transitions, Settings return, mDNS pairing discovery, six-digit code entry, automatic connection and manual fallback.
+4. Record whether the Test Target visibly received an event, with device model, Android build and a redacted result. Do not infer input success from UID, Pair or shell output.
 
 ## Required reports
 
-- `RESEARCH.md` — sources and technical unknowns.
-- `DECISIONS.md` — architecture decisions and reversibility.
-- `FEATURE_MATRIX.md` and `CAPABILITY_MATRIX.md` — evidence labels.
-- `FEASIBILITY_RESULTS.md` — real test results only; unrun tests remain unverified.
-- `TEST_PROTOCOL.md` — repeatable device test.
-- `THIRD_PARTY_NOTICES.md` — dependency license/security review.
+- `RESEARCH.md`
+- `DECISIONS.md`
+- `FEATURE_MATRIX.md` and `CAPABILITY_MATRIX.md`
+- `FEASIBILITY_RESULTS.md`
+- `TEST_PROTOCOL.md`
+- `THIRD_PARTY_NOTICES.md`
 
-## Phase policy
+## Honesty rule
 
-The user explicitly requested that AndroidX foundation/UI work continue within the existing Phase 1 project. That in-place work does not convert the Phase 1 evidence gate to PASS. Do not label Input injection as verified until the target app visibly receives and logs the event on a physical device.
+This ZIP has not been compiled with the Android Gradle Plugin in this authoring environment. Structural checks, source inspection, GitHub CI, and physical-device tests are separate evidence levels. `UNVERIFIED` is not a crash or necessarily an app error; it is the correct status until target event delivery is observed.

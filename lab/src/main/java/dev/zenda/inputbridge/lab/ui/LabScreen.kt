@@ -52,6 +52,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,7 +70,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -110,17 +110,48 @@ fun LabScreen(
     onStopAdbHelper: () -> Unit,
     onDisconnect: () -> Unit,
     onAdbTapProbe: () -> Unit,
-    onAdbSwipeProbe: () -> Unit
+    onAdbSwipeProbe: () -> Unit,
+    directStage: String,
+    pairingEndpointLabel: String,
+    connectionEndpointLabel: String,
+    openDirectTabRequest: Boolean,
+    onDirectTabRequestConsumed: () -> Unit,
+    onStartDirectActivation: () -> Unit,
+    onRetryDirectDiscovery: () -> Unit,
+    onRetryDirectConnection: () -> Unit,
+    onPairDetectedCode: (String) -> Unit
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
+    val currentRoute = currentDestination?.route
 
-    var host by rememberSaveable { mutableStateOf("127.0.0.1") }
+    var host by rememberSaveable { mutableStateOf("") }
     var pairingPort by rememberSaveable { mutableStateOf("") }
     var connectionPort by rememberSaveable { mutableStateOf("") }
-    // A pairing code is intentionally not saveable: don't persist it through recreation.
+    var showManualDetails by rememberSaveable { mutableStateOf(false) }
+    // Pairing codes are ephemeral and intentionally not saved across activity recreation.
     var pairingCode by remember { mutableStateOf("") }
+
+    fun navigateToTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = false }
+            launchSingleTop = true
+            restoreState = false
+        }
+    }
+
+    fun startDirectFlow() {
+        pairingCode = ""
+        onStartDirectActivation()
+    }
+
+    LaunchedEffect(openDirectTabRequest) {
+        if (openDirectTabRequest) {
+            navigateToTab(LabTab.DIRECT_ADB.route)
+            onDirectTabRequestConsumed()
+        }
+    }
 
     Scaffold(
         modifier = Modifier
@@ -132,7 +163,7 @@ fun LabScreen(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("InputBridge", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                        Text("Zenda Touse Plus · Feasibility Lab", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Zenda Touse Plus · Native Foundation", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 actions = {
@@ -151,15 +182,14 @@ fun LabScreen(
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 LabTab.entries.forEach { tab ->
-                    val selected = currentDestination?.hierarchy?.any { it.route == tab.route } == true
+                    // Compare the exact current route. This keeps the selected indicator tied to
+                    // the actual NavController destination, including Home-card navigation.
+                    val selected = isLabTabSelected(currentRoute, tab.route)
                     NavigationBarItem(
                         selected = selected,
                         onClick = {
-                            navController.navigate(tab.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
+                            navigateToTab(tab.route)
+                            if (tab == LabTab.DIRECT_ADB && directStage in setOf("idle", "failed")) startDirectFlow()
                         },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label, maxLines = 1, fontSize = 10.sp) }
@@ -177,8 +207,11 @@ fun LabScreen(
                 HomeScreen(
                     shizukuStatus = shizukuStatus,
                     adbStatus = adbStatus,
-                    onOpenShizuku = { navController.navigate(LabTab.SHIZUKU.route) },
-                    onOpenDirect = { navController.navigate(LabTab.DIRECT_ADB.route) },
+                    onOpenShizuku = { navigateToTab(LabTab.SHIZUKU.route) },
+                    onOpenDirect = {
+                        navigateToTab(LabTab.DIRECT_ADB.route)
+                        if (directStage in setOf("idle", "failed")) startDirectFlow()
+                    },
                     onOpenTarget = onOpenTarget
                 )
             }
@@ -207,12 +240,25 @@ fun LabScreen(
                     pairingCode = pairingCode,
                     onPairingCodeChange = { pairingCode = it.filter(Char::isDigit).take(6) },
                     adbStatus = adbStatus,
-                    onPair = {
+                    directStage = directStage,
+                    pairingEndpointLabel = pairingEndpointLabel,
+                    connectionEndpointLabel = connectionEndpointLabel,
+                    showManualDetails = showManualDetails,
+                    onToggleManualDetails = { showManualDetails = !showManualDetails },
+                    onStartDirectActivation = ::startDirectFlow,
+                    onRetryDiscovery = onRetryDirectDiscovery,
+                    onRetryConnection = onRetryDirectConnection,
+                    onPairDetectedCode = {
+                        val code = pairingCode
+                        pairingCode = ""
+                        onPairDetectedCode(code)
+                    },
+                    onPairManual = {
                         val code = pairingCode
                         pairingCode = ""
                         onPair(host, pairingPort.toIntOrNull() ?: -1, code)
                     },
-                    onConnect = { onConnect(host, connectionPort.toIntOrNull() ?: -1) },
+                    onConnectManual = { onConnect(host, connectionPort.toIntOrNull() ?: -1) },
                     onStartHelper = onStartAdbHelper,
                     onStopHelper = onStopAdbHelper,
                     onDisconnect = onDisconnect,
@@ -299,7 +345,7 @@ private fun HeroBanner() {
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF6DE7D0)))
-                    Text("PHASE 1 · FEASIBILITY LAB", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("PHASE 2 · NATIVE FOUNDATION", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
             Text("Make every input\nmeasurable.", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
@@ -372,8 +418,17 @@ private fun DirectAdbScreen(
     pairingCode: String,
     onPairingCodeChange: (String) -> Unit,
     adbStatus: String,
-    onPair: () -> Unit,
-    onConnect: () -> Unit,
+    directStage: String,
+    pairingEndpointLabel: String,
+    connectionEndpointLabel: String,
+    showManualDetails: Boolean,
+    onToggleManualDetails: () -> Unit,
+    onStartDirectActivation: () -> Unit,
+    onRetryDiscovery: () -> Unit,
+    onRetryConnection: () -> Unit,
+    onPairDetectedCode: () -> Unit,
+    onPairManual: () -> Unit,
+    onConnectManual: () -> Unit,
     onStartHelper: () -> Unit,
     onStopHelper: () -> Unit,
     onDisconnect: () -> Unit,
@@ -381,74 +436,116 @@ private fun DirectAdbScreen(
     onSwipe: () -> Unit,
     onOpenTarget: () -> Unit
 ) {
+    val canEnterCode = directStage in setOf("ready_for_code", "waiting_for_pairing")
+    val canOpenDeveloperSettings = directStage !in setOf("pairing", "paired_waiting_connection", "connecting", "connected", "helper_ready")
     ContentColumn {
-        ScreenHeading("Direct Wireless debugging", "Experimental pathway", "Pairing, shell access and input delivery are different checkpoints.")
+        ScreenHeading("Direct Wireless debugging", "Guided activation", "Open Android settings, enter the temporary six-digit code, then let the app discover the current connection port.")
         Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(18.dp)) {
             Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
                 Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Experimental · not verified", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold)
-                    Text("Keep the Android Pair device screen accessible. Pairing and connection ports are separate and can change.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text(
+                        when (directStage) {
+                            "helper_ready" -> "Helper ready · input still needs target verification"
+                            "connected" -> "ADB shell connected · input not verified"
+                            "pairing" -> "Pairing in progress"
+                            "paired_waiting_connection", "connecting" -> "Pairing confirmed · connecting automatically"
+                            "ready_for_code" -> "Waiting for the six-digit code"
+                            "waiting_settings", "waiting_for_pairing" -> "Waiting for Wireless debugging pairing"
+                            else -> "Experimental · capability not yet verified"
+                        },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Tap Start to open Developer options. Turn on Wireless debugging, choose ‘Pair device with pairing code’, then return here. The app never reads the code automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
                 }
             }
         }
+        Button(
+            onClick = onStartDirectActivation,
+            enabled = canOpenDeveloperSettings,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Filled.Wifi, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (directStage == "idle" || directStage == "failed") "Start Direct activation" else "Reopen Developer options")
+        }
         StatusDetailCard("Latest ADB report", adbStatus, Icons.Filled.Wifi)
-        SectionHeading("1 · Pair device", "Enter the temporary pairing details from Android Settings")
-        OutlinedTextField(
-            value = host,
-            onValueChange = onHostChange,
-            label = { Text("Phone IP / host") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = pairingPort,
-            onValueChange = onPairingPortChange,
-            label = { Text("Pairing port") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = pairingCode,
-            onValueChange = onPairingCodeChange,
-            label = { Text("Temporary 6-digit pairing code") },
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Button(
-            onClick = onPair,
-            enabled = pairingCode.length == 6 && (pairingPort.toIntOrNull()?.let { it in 1..65535 } == true),
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Pair device") }
-        SectionHeading("2 · Connect", "Use the current connection port, not the pairing port")
-        OutlinedTextField(
-            value = connectionPort,
-            onValueChange = onConnectionPortChange,
-            label = { Text("Connection port") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Button(
-            onClick = onConnect,
-            enabled = connectionPort.toIntOrNull()?.let { it in 1..65535 } == true,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Connect + verify shell identity") }
-        SectionHeading("3 · Helper and input probes", "Only fixed, bounded helper requests are exposed")
-        ActionButton("Bootstrap helper + verify UID", onClick = onStartHelper)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = onTap, modifier = Modifier.weight(1f)) { Text("Test tap") }
-            OutlinedButton(onClick = onSwipe, modifier = Modifier.weight(1f)) { Text("Test swipe") }
+        if (pairingEndpointLabel.isNotBlank()) {
+            StatusDetailCard("Pairing screen detected", pairingEndpointLabel, Icons.Filled.CheckCircle)
+        } else if (directStage in setOf("ready_for_code", "waiting_for_pairing")) {
+            InfoNotice("Finding pairing details", "Keep the Android ‘Pair device with pairing code’ dialog open. Port discovery can take a moment; the Pair button becomes available when Android exposes the service.")
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onStopHelper, modifier = Modifier.weight(1f)) { Text("Stop helper") }
-            OutlinedButton(onClick = onDisconnect, modifier = Modifier.weight(1f)) { Text("Disconnect") }
+        if (canEnterCode || pairingEndpointLabel.isNotBlank() || directStage == "pairing") {
+            SectionHeading("Pair device", "Enter only the temporary six-digit code shown by Android Settings")
+            OutlinedTextField(
+                value = pairingCode,
+                onValueChange = onPairingCodeChange,
+                label = { Text("6-digit pairing code") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = onPairDetectedCode,
+                enabled = pairingCode.length == 6 && pairingEndpointLabel.isNotBlank() && directStage != "pairing",
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (directStage == "pairing") "Pairing…" else "Pair & continue automatically") }
+            if (pairingEndpointLabel.isBlank()) {
+                OutlinedButton(onClick = onRetryDiscovery, modifier = Modifier.fillMaxWidth()) { Text("Retry pairing discovery") }
+            }
         }
-        OutlinedButton(onClick = onOpenTarget, modifier = Modifier.fillMaxWidth()) { Text("Open test target") }
-        InfoNotice("Keep pairing code private", "The code field clears when Pair is pressed and is not saved in UI preferences or the Room history.")
+        if (connectionEndpointLabel.isNotBlank()) {
+            StatusDetailCard("Discovered connection endpoint", connectionEndpointLabel, Icons.Filled.Wifi)
+        }
+        if (directStage in setOf("paired_waiting_connection", "connecting")) {
+            InfoNotice("Connecting automatically", "Pairing has been accepted. InputBridge is looking for the current ADB connection endpoint and will verify shell identity before starting the helper.")
+            if (directStage == "paired_waiting_connection") {
+                OutlinedButton(onClick = onRetryConnection, modifier = Modifier.fillMaxWidth()) { Text("Retry connection discovery") }
+            }
+        }
+        if (directStage in setOf("connected", "helper_ready") || adbStatus.contains("helper", ignoreCase = true)) {
+            SectionHeading("Input verification", "ADB/helper status is not proof of delivery")
+            if (directStage == "connected") {
+                ActionButton("Retry helper bootstrap", onClick = onStartHelper)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onTap, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.TouchApp, null); Spacer(Modifier.width(8.dp)); Text("Test tap") }
+                OutlinedButton(onClick = onSwipe, modifier = Modifier.weight(1f)) { Text("Test swipe") }
+            }
+            OutlinedButton(onClick = onOpenTarget, modifier = Modifier.fillMaxWidth()) { Text("Open test target") }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onStopHelper, modifier = Modifier.weight(1f)) { Text("Stop helper") }
+                OutlinedButton(onClick = onDisconnect, modifier = Modifier.weight(1f)) { Text("Disconnect") }
+            }
+        }
+        OutlinedButton(onClick = onToggleManualDetails, modifier = Modifier.fillMaxWidth()) {
+            Text(if (showManualDetails) "Hide manual endpoint fallback" else "Manual endpoint fallback")
+        }
+        if (showManualDetails) {
+            SectionHeading("Manual fallback", "Use only if this device does not expose the mDNS pairing/connection service")
+            OutlinedTextField(value = host, onValueChange = onHostChange, label = { Text("Phone IP / host") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = pairingPort, onValueChange = onPairingPortChange, label = { Text("Pairing port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = connectionPort, onValueChange = onConnectionPortChange, label = { Text("Connection port") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(
+                onClick = onPairManual,
+                enabled = pairingCode.length == 6 && (pairingPort.toIntOrNull()?.let { it in 1..65535 } == true),
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Pair using manual details") }
+            OutlinedButton(
+                onClick = onConnectManual,
+                enabled = connectionPort.toIntOrNull()?.let { it in 1..65535 } == true,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Connect using manual details") }
+            ActionButton("Bootstrap helper manually", onClick = onStartHelper)
+            OutlinedButton(onClick = onRetryDiscovery, modifier = Modifier.fillMaxWidth()) { Text("Retry automatic discovery") }
+        }
+        InfoNotice("Keep the code private", "The code is used only for the pairing request, cleared from the form immediately, and never stored in preferences or probe history. Android may require split-screen or switching between Settings and InputBridge to read it.")
     }
 }
 

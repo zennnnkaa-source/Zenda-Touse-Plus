@@ -33,3 +33,14 @@
 - [ ] No secrets or pairing codes appear in report/logs.
 
 **Current gate:** not passed; the above device/build checks are still not run.
+
+
+## Phase 2 in-place UI updates (2026-10-19)
+
+| Feature | Source implementation | Status | Verification needed |
+|---|---|---|---|
+| Bottom-tab selected indicator follows active page | `currentBackStackEntryAsState()` and exact route policy | SOURCE IMPLEMENTED; standalone route policy compiles | GitHub CI + device navigation regression |
+| Direct activation launches Developer options | `Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS` with generic Settings fallback | SOURCE IMPLEMENTED | Physical device/OEM check |
+| Pairing and connection port auto-discovery | `NsdManager` for separate `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` services | EXPERIMENTAL / DEVICE UNVERIFIED | Physical device, Wireless debugging dialog active |
+| Waiting notification | Notification permission + notification channel; in-app state retained if denied | SOURCE IMPLEMENTED | Android 13+ permission grant/deny test |
+| Six-digit code entry then automatic Pair → Connect → helper | Source path implemented; manual endpoint remains a fallback | EXPERIMENTAL / DEVICE UNVERIFIED | Device protocol and helper test, followed by target event observation |

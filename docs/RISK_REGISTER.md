@@ -27,3 +27,6 @@ Likelihood / Impact: Low · Medium · High. `Open` means not yet resolved. Phase
 2. No physical Android 11+ device test has been executed from this environment.
 3. Neither Shizuku nor direct ADB bootstrap/helper has proven that the separate test target received an event.
 4. License/security review for the direct ADB dependency is not complete.
+
+| R-17 | Wireless-debugging mDNS endpoints are not discoverable on some OEMs/networks | High | High | Keep retry and manual endpoint fallback; physical-device test both pairing and connection service discovery separately. | OPEN / DEVICE TEST NEEDED |
+| R-18 | Notification permission denied prevents the system waiting notification | Medium | Medium | Continue showing the in-app waiting state and expose a clear Settings return path; never claim a notification was shown when Android denied permission. | MITIGATED IN UI / DEVICE TEST NEEDED |

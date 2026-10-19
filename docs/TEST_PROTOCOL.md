@@ -59,3 +59,22 @@ Logs redacted (pairing code and keys removed): yes/no
 ```
 
 The Lab reports helper round-trip time, which includes command execution and response but is not a true event-delivery latency measurement. Do not claim end-to-end latency from it or from a single casual tap. For latency comparisons, repeat at least 30 times under the same device conditions and separately report median and p95, failures/cancellations, and the exact measurement method. Do not begin a full mapping engine until at least one end-to-end path proves delivery.
+
+
+## Phase 2 UI regression checks
+
+1. Tap each bottom tab and verify the selected indicator follows the visible destination without a stale highlighted tab. Navigate from Home shortcuts to Shizuku and Direct and verify the indicator follows those transitions too.
+2. Tap Direct from Home or the bottom tab. Approve notifications if you want the system reminder, then confirm Android Developer options opens. If notification permission is declined, the in-app waiting state must still work.
+3. In Developer options, enable Wireless debugging and open “Pair device with pairing code”. Return to InputBridge. The six-digit entry should appear; the code must never be copied to logs or persisted.
+4. Keep the Android pairing dialog open until the pairing request is submitted. Automatic pairing/connection depends on mDNS discovery; if endpoints do not appear, use the expandable manual endpoint fallback and record the OEM/Android version.
+5. After successful pairing, verify the app reports connection and helper status as separate stages. Open the Test Target and confirm the expected event is visible before recording input delivery as passed.
+
+## Phase 2 navigation and guided-Direct regression checks
+
+1. Tap each bottom tab in sequence: Home → Shizuku → Direct → Diagnostics → Settings. Confirm the active indicator follows the visible page every time. Repeat using Home-card shortcuts and the notification entry point.
+2. Tap Direct from Idle. Approve notification permission if desired. Confirm Android Developer options opens; enable Wireless debugging and open “Pair device with pairing code”.
+3. Keep the pairing dialog visible long enough for NSD discovery. The UI should report pairing details found and allow a six-digit code. If notification permission is granted, the notification title should update from waiting to pairing detected.
+4. Enter the code and pair. On reported pairing success, the code field must clear; the app should discover the separate connection endpoint, connect, check shell identity, and attempt helper bootstrap. Treat each state as experimental until the actual returned result is observed.
+5. Navigate to another tab and back while waiting for the code. It must not silently reset discovery or reopen Developer options. Use the explicit “Reopen Developer options” button only when that is intended.
+6. Repeat with notification permission denied and with mDNS unavailable. The in-app waiting state must remain useful and manual host/pairing-port/connection-port fallback must still be accessible.
+7. Run an input probe with the Test Target open. Mark input delivery PASS only when the target visibly shows the corresponding touch/key/motion event.
