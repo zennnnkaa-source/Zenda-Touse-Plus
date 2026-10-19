@@ -17,7 +17,7 @@
 | Test target | Mouse buttons, relative axes and scroll | SOURCE ONLY | USB/Bluetooth mouse test; identify event source and OS build. |
 | Test target | Pointer capture acquire/release | SOURCE ONLY | Physical mouse/touchpad test across tested Android versions. |
 | Automated logic | Port/code/command validation unit tests | SOURCE ONLY | GitHub Actions test task passes. |
-| CI | lint + unit tests + assemble two debug APKs | WORKFLOW CREATED / NOT RUN | Successful GitHub Actions run; record run URL and commit. |
+| CI / Release | lint + unit tests + two signed Release APKs + signature verification + GitHub Release upload | WORKFLOW UPDATED / NOT RUN ON THIS REVISION | Successful Android Release workflow; record run URL, tag and commit. |
 | Control Studio / game profile mapping | Not in Phase 1 scope | NOT STARTED | Planned for later phases only after input injection gate passes. |
 | Third-party game support / anti-cheat compatibility | Not tested and not promised | UNKNOWN / RISKY | Requires authorized per-game testing and must not include anti-cheat bypass. |
 
@@ -25,7 +25,7 @@
 
 - [ ] Gradle dependency resolution and lint pass in GitHub Actions.
 - [ ] Unit tests pass in GitHub Actions.
-- [ ] Both debug APKs assemble and are downloadable as an Actions artifact.
+- [ ] Both signed Release APKs assemble, their signatures verify, and the files are published to GitHub Releases.
 - [ ] Shizuku state and UID are verified on at least one physical device.
 - [ ] Direct ADB pairing/connect/shell has explicit pass/fail evidence on at least one physical device, or Option B is marked unavailable on that test setup.
 - [ ] At least one activation path sends a test input that appears in the separate target's real event log.

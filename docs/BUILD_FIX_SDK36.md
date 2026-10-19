@@ -12,9 +12,13 @@ The submitted GitHub Actions log failed while configuring `:input-target`, befor
 - Removed the redundant `org.jetbrains.kotlin.android` plugin from `input-target`; AGP 9 supplies built-in Kotlin.
 - Replaced the legacy `android.kotlinOptions` block with `kotlin.compilerOptions`.
 - Set `lab` `compileSdk` to 36; `input-target` was already set to 36.
-- Changed both CI workflows to install `platforms;android-36`.
+- Configured the single `Android Release` workflow to install `platforms;android-36` and Build Tools `36.0.0`.
 - Downgraded Compose BOM to `2026.04.01`, Navigation Compose to `2.9.8`, and Lifecycle to `2.10.0` to keep dependencies aligned with the requested API 36 baseline. The Compose BOM `2026.08.00` / Compose 1.12 and Lifecycle 2.11 require API 37.
 - Kept `targetSdk = 36`, Build Tools `36.0.0`, AGP `9.4.0`, Gradle `9.6.0`, and JDK 17.
+
+## Receiver lint fix
+
+The current pairing status receiver uses `ContextCompat.registerReceiver` with `ContextCompat.RECEIVER_NOT_EXPORTED` and the app signature-level broadcast permission. This addresses lint issue `UnspecifiedRegisterReceiverFlag` for the legacy branch that triggered the supplied CI failure, while preserving the internal sender permission on supported Android releases.
 
 ## Validation status
 

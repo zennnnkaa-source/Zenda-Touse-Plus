@@ -13,7 +13,7 @@ android {
         minSdk = 30
         targetSdk = 36
         versionCode = 1
-        versionName = "0.3.0-phase3-pairing"
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -41,6 +41,7 @@ kotlin {
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
+    implementation(libs.core.ktx)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)

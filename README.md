@@ -1,98 +1,145 @@
-# Zenda Touse Plus — InputBridge (continuing in the original Phase 1 project)
+# Zenda Touse Plus — InputBridge
 
-**Product prototype:** InputBridge Activation & Input Feasibility Lab  
-**Status:** Continuing Phase 3 notification-based Wireless ADB pairing in the same repository. The latest source revision still needs a fresh GitHub Actions run. The user reports the current app flows are usable; end-to-end input delivery remains explicitly unverified until the separate Test Target records an event.
+**InputBridge** is an Android toolkit for exploring and validating privileged input workflows through Shizuku and Android Wireless Debugging. It combines a guided activation app, a small on-device helper, and a separate test target so that setup status can be distinguished from input events that are actually received.
 
-Phase 1 is a proof-of-concept, not the production mapper. It intentionally separates:
+The project is designed for phone-first development and repeatable GitHub Actions builds. It does not require a custom backend or root access for the documented Wireless Debugging route. ADB pairing, connection, helper startup, and delivered input are treated as separate checkpoints rather than being reported as one success state.
 
-- **InputBridge Lab** (`dev.zenda.inputbridge.lab`) — Shizuku checks/helper probe and experimental direct Wireless debugging pairing.
-- **InputBridge Test Target** (`dev.zenda.inputbridge.target`) — a separate app that records only key, touch, mouse and pointer-capture events actually delivered to it.
+## Highlights
 
-The permanent product name in this phase remains **InputBridge** (per the Phase 0 decision). The project root combines it with the umbrella project: **Zenda Touse Plus**.
+- **Guided activation:** A dedicated Direct flow guides the user through Android Developer Options and Wireless Debugging, then tracks discovery, code entry, pairing, connection, and helper readiness.
+- **Shizuku integration:** Checks Shizuku availability and permission state, observes Binder lifecycle changes, and supports a separate helper-service probe.
+- **Wireless ADB pairing:** Discovers Android's pairing service through network service discovery (mDNS/NSD), uses the active host and dynamic port, and submits the six-digit code displayed by Android through the real ADB pairing protocol.
+- **Notification code entry:** When notifications are available and the device supports the interaction, the ongoing pairing notification exposes an inline code field after a pairing endpoint is discovered. An in-app code field remains available as a fallback for denied notification permission or OEM notification behavior.
+- **Connection discovery:** Searches separately for the Wireless ADB connection endpoint. Pairing and connecting are different operations and are reported independently.
+- **Restricted helper commands:** Direct ADB is used to locate the Lab APK and bootstrap the on-device helper. The helper path uses a small allowlist instead of exposing an arbitrary shell command interface.
+- **Input verification target:** A separate app records key, touch, mouse, scroll, and pointer-capture events that actually reach it. This provides a concrete way to distinguish successful activation from successful input delivery.
+- **Modern Android UI:** Jetpack Compose, Material 3, Navigation Compose, a persistent light/dark theme preference, and a bounded local history of predefined probe actions and outcomes.
+- **GitHub Release delivery:** The `Android Release` workflow runs quality checks, builds signed Release APKs for both apps, verifies their signatures, generates SHA-256 checksums, and publishes the APKs to a GitHub Release.
 
-## What the existing project contains
+## Applications
 
-- Runtime Shizuku Binder/permission/UID checks, Binder lifecycle callbacks, and an isolated `UserService` probe.
-- Experimental direct ADB pairing using `libadb-android`; normal flow discovers the separate pairing and connection ports through Android NSD, with an expandable manual endpoint fallback for devices/networks that do not advertise mDNS.
-- Direct ADB is used only to locate the Lab APK and bootstrap `AdbBootstrapHelperMain` with `app_process`; subsequent `UID` / bounded tap and horizontal-swipe probes go through a short-lived authenticated loopback socket to the shared `LocalHelperServer` runtime used by the Shizuku path.
-- Fixed-shell-command allowlist: only `id`, the exact Lab `pm path` lookup, and the strict generated helper-bootstrap command are allowed. The app does not provide a raw shell or use ADB as its ongoing input pipe.
-- Per-install ADB identity whose encoded private-key bytes are encrypted with an AES-GCM key backed by Android Keystore before app-private persistence. The local helper session uses an ephemeral 256-bit token held only in memory. These are POC designs, not audited security implementations.
-- Separate test target with bounded event log, key down/up fields, pointer capture control, touch pointers, mouse motion axes, button and scroll state.
-- Unit tests for endpoint, pairing-code and fixed-command validation.
-- GitHub Actions workflow to set up a pinned Gradle distribution + Android SDK, run lint/unit tests, assemble both debug APKs and upload them as an artifact.
-- Native AndroidX application shell: Jetpack Compose + Material 3, AndroidX Navigation Compose, lifecycle-aware state collection, a persistent light/dark theme preference using DataStore, and a Room-backed bounded history containing only fixed probe labels/outcomes.
-- Bottom-tab selection is bound to the exact active Navigation Compose destination; the Direct activation path can be opened from the bottom tab or Home shortcut.
-- Direct activation now separates UI states for waiting for Settings return, waiting for mDNS details, entering the code, pairing, connecting, and helper-ready. Successful pairing automatically attempts the current connection endpoint and helper bootstrap; this remains experimental until re-tested on device.
+| App | Application ID | Purpose |
+| --- | --- | --- |
+| **InputBridge Lab** | `dev.zenda.inputbridge.lab` | Main UI, Shizuku status and helper probe, Wireless ADB pairing/connection, helper bootstrap, diagnostics, settings, and local probe history. |
+| **InputBridge Test Target** | `dev.zenda.inputbridge.target` | Separate target application for displaying input events actually delivered to the app. |
 
-## Current validation snapshot
+Keeping the test target separate is intentional: seeing “paired,” receiving a shell response, or starting a helper is not proof that a target application received a key or touch event.
 
-- Structural validator: **0 errors, 1 warning** (the missing Gradle Wrapper files; the workflow downloads pinned Gradle instead).
-- 26 standalone Kotlin assertions for the pure input-policy validator (including bounded tap/swipe requests): **passed**. This is not an Android compile, Gradle test, or device test.
-- Latest user-provided GitHub log reached Release APK packaging but failed while signing with `Password is not ASCII`; this is a signing configuration issue, not evidence of a clean Release build.
-- Phase 3 review (2026-10-20): corrected timeout scheduling, bounded retries and endpoint lifetime, rejected stale discovery callbacks, secured internal broadcasts on API 30–32, unified ADB manager ownership, added mDNS multicast-lock lifecycle handling and an Android 16 local-network permission path. Source-level wiring was reviewed; a Gradle/Android compile has not been run for these newest edits.
-- Shizuku, Direct ADB mDNS discovery, automatic connect/helper bootstrap and target event delivery: **not device-verified for this revision**.
+## How the Direct connection works
 
-## Required validation — do not skip
+1. Open the Direct section and follow the prompt to enable Developer Options and Wireless Debugging.
+2. Start pairing. InputBridge searches for the Android pairing endpoint instead of assuming a fixed port.
+3. Enter the six digits currently displayed by Android Wireless Debugging. The app does not generate, guess, or retrieve this code.
+4. InputBridge passes the code and discovered endpoint to its ADB pairing implementation and displays the actual result.
+5. After pairing succeeds, the app separately looks for the ADB connection endpoint and attempts to connect.
+6. The app locates its helper, starts it through the restricted bootstrap path, and reports helper readiness.
+7. Use **InputBridge Test Target** to verify whether the expected key, touch, or pointer event arrived.
 
-1. Apply this ZIP over the same GitHub repository and open **Actions → Phase 3 Wireless Pairing CI**. A green CI run is the first build/test evidence for this revision; no green run is included with this ZIP.
-2. Download both debug APKs from the workflow artifact and install **both** on a test Android 11+ device.
-3. Follow [`docs/TEST_PROTOCOL.md`](docs/TEST_PROTOCOL.md). Run the Shizuku flow and direct Wireless debugging flow independently. See [`docs/CAPABILITY_MATRIX.md`](docs/CAPABILITY_MATRIX.md) for version-specific evidence labels.
-4. Confirm the test target's event list shows the expected tap/key/mouse event. A pairing success, ADB shell `id`, or helper UID alone is **not** proof that input injection works.
-5. Record device model, Android build, time, steps, exact result and a redacted log in [`docs/FEASIBILITY_RESULTS.md`](docs/FEASIBILITY_RESULTS.md). Never record pairing codes or private keys.
+Pairing and connection rely on Android's Wireless Debugging implementation and local-network discovery. On some Wi-Fi networks, routers, or OEM builds, mDNS discovery or notification inline input can be restricted. In those cases, the in-app code field and available manual endpoint controls can be used where applicable. Android 16's local-network restrictions may also require the nearby-device permission path provided by the app.
 
-## Build through GitHub Actions
+## InputBridge Lab capabilities
 
-This starter deliberately does not contain a guessed `gradle-wrapper.jar`. The available environment did not provide an intact wrapper binary or Android SDK, so the CI workflow installs Gradle **9.6.0** explicitly instead of depending on an unverified wrapper. This avoids presenting a partial wrapper as valid.
+### Shizuku
 
-The CI workflow installs JDK 17, Android platform `android-36` and build-tools `36.0.0`, then runs:
+- Inspect whether Shizuku is available and whether permission is granted.
+- React to Binder connect/disconnect events and refresh the displayed state.
+- Bind a dedicated `UserService` for isolated helper probing.
+- Report the helper UID and the outcome of bounded probe operations.
 
-```bash
-gradle :lab:lint :input-target:lint \
-  :lab:testDebugUnitTest :input-target:testDebugUnitTest \
-  :lab:assembleDebug :input-target:assembleDebug
-```
+### Wireless Debugging and ADB
 
-Outputs expected from a successful CI run:
+- Discover `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` service endpoints dynamically.
+- Use an ongoing notification with inline `RemoteInput` when supported, plus an in-app fallback.
+- Bound pairing discovery and endpoint lifetime, expose retry/stop actions, reject stale sessions, and avoid duplicate code submissions.
+- Keep pairing codes transient; do not store them in the database or log them as normal diagnostic data.
+- Use ADB for setup and helper bootstrap, not as an unrestricted persistent input pipe.
 
-- `lab/build/outputs/apk/debug/lab-debug.apk`
-- `input-target/build/outputs/apk/debug/input-target-debug.apk`
+### Helper and diagnostic UI
 
-These paths are expected destinations only; no APKs were produced in the environment used to author this ZIP.
+- Use a narrowly defined command allowlist for the documented helper bootstrap and basic identity/probe checks.
+- Route helper communication through an authenticated loopback channel with a short-lived in-memory session token.
+- Present Home, Shizuku, Direct, Diagnostics, and Settings destinations.
+- Store a bounded history of predefined provider/action/outcome values and timestamps, not arbitrary command output or pairing codes.
+- Persist the theme preference using DataStore and keep the recent-probe history in Room.
 
-## Folder map
+## InputBridge Test Target
+
+The test target is intentionally a separate Android application. It provides a visible event log for input that reaches the app, including:
+
+- Key down/up information.
+- Touch and multi-pointer activity.
+- Mouse movement and supported pointer axes.
+- Mouse button and scroll state.
+- Pointer-capture state.
+
+The test target is a verification instrument, not proof by itself that every activation route can inject input into every Android app. A test passes only when the expected event is visible in the target's event list.
+
+## Security and privacy principles
+
+- **No custom backend:** pairing and helper communication stay on the device and its local network; there is no project-operated account service or analytics server.
+- **No root requirement for the documented route:** Wireless Debugging/ADB or a separately installed and authorized Shizuku service is used instead of assuming root access.
+- **No arbitrary shell UI:** privileged commands are constrained to known operations and a generated helper-bootstrap command.
+- **Transient secrets:** pairing codes are not persisted. The local helper session token is held in memory for the active session.
+- **Protected pairing result messages:** internal status broadcasts are package-scoped and registered with a not-exported flag and the app's signature-level permission.
+- **Conservative history:** the Room history contains predefined probe metadata and timestamps, not pairing codes, private-key bytes, free-form commands, or captured user input from other apps.
+
+These are design safeguards, not a claim of a completed third-party security audit. Review [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) before redistribution. The project does not promise compatibility with every OEM, third-party app, game, or anti-cheat system. Test only with your own device and apps you are authorized to test; do not attempt to bypass anti-cheat or platform security controls.
+
+## Build and publish a GitHub Release
+
+Release builds are published through one workflow: **`.github/workflows/android-ci.yml`** (`Android Release`). There is no separate debug-artifact workflow.
+
+### 1. Configure signing secrets
+
+In the GitHub repository, open **Settings → Secrets and variables → Actions** and create these repository secrets using the exact names shown below:
+
+| Secret name | Value |
+| --- | --- |
+| `KEYSTORE_BASE64` | The complete JKS/keystore file encoded as one Base64 string, without wrapping or extra labels. |
+| `KEY_ALIAS` | The alias of the signing key inside the keystore. |
+| `STORE_PASSWORD` | The keystore password. |
+| `KEY_PASSWORD` | The selected key's password. |
+
+The workflow checks that all four secrets are present, validates the keystore and key, and avoids printing their values. Keep the signing passwords compatible with the configured Android/Java signing tools; this workflow explicitly requires ASCII characters for password input.
+
+### 2. Run the release workflow
+
+1. Open **GitHub → Actions → Android Release**.
+2. Select **Run workflow** on the default branch.
+3. The workflow calculates the next semantic version from existing Git tags, updates both app modules, validates the project, runs lint and unit tests, and builds both signed Release APKs.
+4. It verifies each APK signature, writes `SHA256SUMS.txt`, and creates a GitHub Release with a version tag such as `v1.0.0`.
+5. Open **Releases** to download the published files.
+
+The release job fails rather than publishing if lint/tests, signing validation, APK collection, or signature verification fails. The repository's Gradle Wrapper is intentionally not relied upon by this workflow; it installs the pinned Gradle distribution directly and uses JDK 17 with Android SDK platform 36 and Build Tools 36.0.0.
+
+## Repository layout
 
 ```text
-Zenda_Touse_Plus_Phase1/ (same repository as Phase 1)
-├── .github/workflows/phase1-build-test.yml  # Phase 3 lint/tests/debug APK build
-├── .github/workflows/android-ci.yml          # Release/maintenance workflow
-├── gradle/libs.versions.toml
-├── lab/                  # Shizuku + direct ADB POC
-├── input-target/         # real-input event capture target
-├── docs/                 # current Phase 1 planning and evidence
-└── docs/phase0-snapshot/ # original Phase 0 inputs preserved unchanged
+.
+├── .github/
+│   ├── scripts/validate_android_project.py
+│   └── workflows/android-ci.yml
+├── lab/                  # InputBridge Lab app
+├── input-target/         # Separate event-verification app
+├── gradle/               # Version catalog and dependency versions
+├── docs/                 # Architecture, research, test and license notes
+└── README.md
 ```
 
-## Important restrictions
+Useful documentation:
 
-- Option B is **Experimental** until pairing → connect → shell → target event delivery is demonstrated on a physical device.
-- No game/anti-cheat compatibility is promised; only test with the dedicated target app or another target you are authorized to test. Do not attempt to bypass anti-cheat.
-- No telemetry, analytics, or pairing-code logging is included intentionally.
-- Do not publish or redistribute a production/release APK until the third-party dependency license and security review in `docs/THIRD_PARTY_NOTICES.md` is complete.
-- This is still the original repository being advanced in place; no separate phase project is created. Phase 3 is not marked PASS until the current revision passes CI. The `UNVERIFIED` input status is intentional: shell UID/helper response is not proof of target event delivery.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module boundaries and helper architecture.
+- [`docs/TEST_PROTOCOL.md`](docs/TEST_PROTOCOL.md) — repeatable device checks.
+- [`docs/CAPABILITY_MATRIX.md`](docs/CAPABILITY_MATRIX.md) — capability evidence and platform constraints.
+- [`docs/FEASIBILITY_RESULTS.md`](docs/FEASIBILITY_RESULTS.md) — evidence ledger for observed results.
+- [`docs/RESEARCH.md`](docs/RESEARCH.md) — platform research and implementation decisions.
+- [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) — dependency and licensing notes.
+- [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md) — known technical risks and mitigations.
 
+## Planned enhancements
 
-## AndroidX foundation added in-place
+The current structure is intended to support future work without replacing the existing app or splitting the repository. Possible next additions include richer input-device mapping, editable control layouts, reusable profiles, profile import/export, improved device/OEM diagnostics, and more automated end-to-end verification. These are roadmap items; they should be added only with appropriate platform research, tests, and explicit evidence of what works.
 
-- `ui/` owns the reusable Material 3 screens and theme.
-- `data/preferences/UiPreferencesRepository.kt` persists only the user's theme preference with DataStore.
-- `data/local/` contains Room-backed recent probe history. The database stores fixed provider/action/outcome enums and timestamps only; it never stores pairing codes, ADB keys, command output, or arbitrary user input.
-- The navigation shell has Home, Shizuku, Direct, Diagnostics, and Settings destinations.
+## Verification expectations
 
-The foundation is intentionally layered into the existing `:lab` module. The `:input-target` module remains a separate app because separating the input receiver is necessary to test actual event delivery.
-
-
-## Phase 3 — Notification-based Wireless ADB pairing
-
-The Direct route starts a dedicated pairing service when notifications are available. The notification begins in a searching state and gains a RemoteInput action only after Android's `_adb-tls-pairing._tcp` service is discovered. Submissions must match the currently discovered pairing endpoint and session. The service forwards the six digits displayed by Android Wireless debugging to the existing libadb pairing implementation and reports its actual result; it neither reads nor generates the code. Discovery timeout, endpoint expiry/loss, stale callbacks, multicast-lock lifecycle, retries and protected internal status broadcasts have dedicated handling. Android 16 activation checks `NEARBY_WIFI_DEVICES` for the opt-in local-network restriction path.
-
-If notification permission is denied or the device/OEM does not show RemoteInput, use the existing in-app six-digit field. Pairing success only means the ADB pairing protocol accepted the code; it does not establish that a connection or input injection works. See `docs/RESEARCH.md` and `docs/THIRD_PARTY_NOTICES.md`.
+Automated Release publication provides build, lint, unit-test, signing, and packaging checks for the exact commit it processes. Physical-device checks are still necessary for OEM-specific Wireless Debugging behavior and for proving event delivery: pairing success or helper readiness alone is not enough. Follow [`docs/TEST_PROTOCOL.md`](docs/TEST_PROTOCOL.md) and record device model, Android version/build, steps, and results in [`docs/FEASIBILITY_RESULTS.md`](docs/FEASIBILITY_RESULTS.md). Never add pairing codes, private keys, or signing secrets to logs or documentation.

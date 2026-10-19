@@ -16,7 +16,7 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 | Android SDK / `android.jar` | `NOT AVAILABLE` | No `$ANDROID_HOME`/`$ANDROID_SDK_ROOT` with platform files was found at authoring time. |
 | Network dependency resolution | `NOT RUN` | The local environment could not be relied upon to download Android/Gradle dependencies; actual resolution is delegated to CI. |
 | Android emulator / physical device | `NOT AVAILABLE` to this session | No device install, pairing, Shizuku bind, shell command or event delivery was executed. |
-| APKs | `NOT CREATED` | Expected output paths are documented in README; do not treat them as artifacts until CI uploads them. |
+| Release APKs | `NOT CREATED IN AUTHORING ENVIRONMENT` | The Android Release workflow uploads signed APKs for both modules only after lint, unit tests, signing checks and signature verification pass. |
 
 ## 2. Static/source result
 
@@ -34,7 +34,7 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 | Timing | UI reports helper request round-trip time, not end-to-end input delivery latency | No repeated measurements yet | `SOURCE ONLY / NOT MEASURED` |
 | Port/code/command/helper-request test source | JUnit tests written; separate standalone Kotlin assertions also executed | 26 standalone policy assertions passed; Gradle/JUnit test task not run | `PARTIAL — policy assertions PASS; project test task NOT RUN` |
 | Kotlin source syntax pass | No parser/syntax diagnostics after source review | Host Kotlin 1.9 compiler cannot resolve Android and third-party APIs without Android SDK/dependencies; this is not a compile | `PARTIAL — syntax scan only` |
-| Lint + two APK assembly | Phase 2 Native Foundation CI workflow targets SDK 36 and runs lint, unit tests, both debug assemblies | Latest revised source has not run in Actions yet | `NOT RUN` |
+| Lint + signed Release APK assembly | `Android Release` workflow targets SDK 36, runs lint and unit tests, builds both signed Release APKs, and verifies their signatures | Latest audited revision has not run in Actions yet | `NOT RUN` |
 
 ## 3. Required result matrix (fill after running `docs/TEST_PROTOCOL.md`)
 
@@ -50,7 +50,7 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 
 ## 4. What counts as a PASS
 
-- **Build PASS:** GitHub Actions ran dependency resolution, all configured lint/unit-test tasks and both debug assembly tasks successfully on the pinned toolchain. Include the workflow URL.
+- **Build PASS:** GitHub Actions ran dependency resolution, all configured lint/unit-test tasks and both signed Release APK assembly tasks successfully on the pinned toolchain, followed by APK signature verification. Include the workflow URL.
 - **Shizuku PASS for bind:** Binder is live, Shizuku permission has been granted, UserService bind callback succeeds, and the helper reports the UID via `Os.getuid()`. This is a helper-access PASS only, not injection PASS.
 - **Direct ADB PASS for pairing:** library pairing succeeds using the actual pair port and current temporary code. This is not connection PASS.
 - **Direct ADB PASS for shell:** connection using the separate connection port succeeds and fixed `id` command returns output. This is not input PASS.
@@ -59,4 +59,4 @@ This file is an evidence log, not a prediction. An item can change to `PASS` onl
 
 ## 5. Current blocker and phase decision
 
-The original Phase 1 evidence gate remains open, but the user explicitly requested that Phase 2 foundation work continue in the same repository. The latest source adds route-state-driven tab selection, guided Developer Options launch, a waiting notification when notification permission is granted, NSD pairing/connection discovery, and an automatic Pair → Connect → helper path. These are source changes, not proof that mDNS resolves on the user’s OEM or that input is delivered. The CI workflow has not run against this latest revision; no Gradle/Android build proof or target event log is available in this authoring environment. If a path fails on the first device, record OS/build/OEM and a redacted log. Keep injection `UNVERIFIED` until the Test Target visibly reports the event.
+Input-delivery verification remains open, and continued development is intentionally kept in the same repository. The latest source adds route-state-driven tab selection, guided Developer Options launch, a waiting notification when notification permission is granted, NSD pairing/connection discovery, and an automatic Pair → Connect → helper path. These are source changes, not proof that mDNS resolves on the user’s OEM or that input is delivered. The Android Release workflow has not run against this latest revision; no Gradle/Android build proof or target event log is available in this authoring environment. If a path fails on the first device, record OS/build/OEM and a redacted log. Keep injection `UNVERIFIED` until the Test Target visibly reports the event.

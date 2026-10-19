@@ -23,6 +23,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import dev.zenda.inputbridge.lab.adb.AdbConnectionManager
@@ -180,24 +181,21 @@ class MainActivity : ComponentActivity() {
             addAction(AdbPairingNotificationService.ACTION_RESULT)
             addAction(AdbPairingNotificationService.ACTION_STATE)
         }
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(pairingResultReceiver, pairingFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(
-                pairingResultReceiver,
-                pairingFilter,
-                AdbPairingNotificationService.internalBroadcastPermission(this),
-                null
-            )
-        }
+        ContextCompat.registerReceiver(
+            this,
+            pairingResultReceiver,
+            pairingFilter,
+            AdbPairingNotificationService.internalBroadcastPermission(this),
+            null,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         pairingResultReceiverRegistered = true
         ensureDirectNotificationChannel()
         Shizuku.addBinderReceivedListener(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
         Shizuku.addRequestPermissionResultListener(permissionListener)
         args = Shizuku.UserServiceArgs(ComponentName(this, ProbeUserService::class.java))
-            .daemon(false).tag("inputbridge-phase1-probe").version(1)
+            .daemon(false).tag("inputbridge-probe").version(1)
         refreshShizukuStatus()
         lifecycleScope.launch {
             uiPreferences.darkThemeEnabled.collect { enabled -> darkThemeState.value = enabled }

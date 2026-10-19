@@ -1,6 +1,6 @@
 # UI/UX Handoff — Zenda Touse Plus / InputBridge
 
-This UI update remains in the existing Phase 1 repository. It does not create a separate Phase 2 project.
+This UI work remains in the existing Zenda Touse Plus repository. The application is developed in place; it is not maintained as a separate prototype project.
 
 ## Current UI foundation
 
@@ -13,9 +13,8 @@ This UI update remains in the existing Phase 1 repository. It does not create a 
 
 ## Validation status
 
-The source package and Gradle configuration were structurally inspected. The current authoring environment does not have an Android SDK or Gradle executable, so an Android build has not been run here. GitHub Actions must pass lint, unit tests, and debug assembly before this UI is considered build-verified. A physical-device test must still demonstrate that the target app actually receives and records input.
+The source package and Gradle configuration were structurally inspected. The current authoring environment does not have an Android SDK or Gradle executable, so an Android build has not been run here. The Android Release GitHub Actions workflow must pass lint, unit tests, signed Release assembly, and signature verification before the current source is considered build-verified. A physical-device test must still demonstrate that the target app actually receives and records input.
 
 ## Repository workflows
 
-- `android-ci.yml`: release-only workflow, preserving existing signing secret names and publishing a tagged release on manual dispatch.
-- `phase1-build-test.yml`: unsigned debug CI for push, pull request, or manual dispatch. It installs API 36 and Build Tools 36.0.0 to match the selected SDK 36 compatibility baseline.
+- `android-ci.yml`: the single release workflow. Manual dispatch calculates the next version, validates `KEYSTORE_BASE64`, `KEY_ALIAS`, `STORE_PASSWORD`, and `KEY_PASSWORD`, runs lint and unit tests, builds and verifies both signed Release APKs, and publishes them to GitHub Releases. It uses JDK 17, Gradle 9.6.0, Android SDK 36, and Build Tools 36.0.0.

@@ -345,12 +345,12 @@ private fun HeroBanner() {
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF6DE7D0)))
-                    Text("PHASE 2 · NATIVE FOUNDATION", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("INPUTBRIDGE LAB", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
             Text("Make every input\nmeasurable.", style = MaterialTheme.typography.headlineMedium, color = Color.White, fontWeight = FontWeight.Bold)
             Text(
-                "Verify each activation step with evidence before building the full mapping engine.",
+                "Connect, validate, and diagnose the input path from setup through target event delivery.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFFE0E9FF)
             )
