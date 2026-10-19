@@ -18,4 +18,4 @@ The source package and Gradle configuration were structurally inspected. The cur
 ## Repository workflows
 
 - `android-ci.yml`: release-only workflow, preserving existing signing secret names and publishing a tagged release on manual dispatch.
-- `phase1-build-test.yml`: unsigned debug CI for push, pull request, or manual dispatch. It installs API 37 and Build Tools 36.0.0 to match AGP 9.4 / Compose.
+- `phase1-build-test.yml`: unsigned debug CI for push, pull request, or manual dispatch. It installs API 36 and Build Tools 36.0.0 to match the selected SDK 36 compatibility baseline.

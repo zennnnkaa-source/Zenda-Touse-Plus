@@ -19,7 +19,7 @@ Phase 0 documents are preserved under [`phase0-snapshot/`](phase0-snapshot/). Th
 | Input target | The separate native test app records KeyEvent, touch/pointer and generic mouse/scroll events delivered to its own Activity. Pointer capture remains a test of input delivered to that app, not a system-wide guarantee. | Design follows Android input APIs. Source exists, but compilation/runtime and physical mouse/controller behavior are `UNVERIFIED-DEVICE`. |
 | Accessibility fallback | Accessibility gesture dispatch remains a possible later fallback only; it is not the primary Phase 1 test route and is not implemented as a claimed working mapper. | Carried from Phase 0 research; policy and gesture limitations need their own evidence/review before use. |
 | AGP/Gradle/JDK | AGP `9.4.0` release notes (September 2026) specify Gradle `9.6.0`, JDK 17, Build Tools `36.0.0`, maximum API level 37, and recommend KGP `2.2.10`. | `DOC-VERIFIED`; [AGP 9.4.0 release notes](https://developer.android.com/build/releases/agp-9-4-0-release-notes). Build uses JDK 17 and Gradle 9.6.0 in CI, compile SDK 36. No local build was run. |
-| Compose versions | The Gradle catalog pins Compose BOM `2026.08.00`, Activity Compose `1.12.4`, and lets the BOM select Material 3. | Checked against the official [Compose BOM page](https://developer.android.com/develop/ui/compose/bom) and [AndroidX release notes](https://developer.android.com/jetpack/androidx/versions). Dependency resolution still needs CI. |
+| Compose versions | The Gradle catalog pins Compose BOM `2026.04.01`, Activity Compose `1.12.4`, Navigation Compose `2.9.8`, and Lifecycle `2.10.0`. These versions are selected for the API 36 build baseline; Compose 1.12 / BOM `2026.08.00` and Lifecycle 2.11 require API 37, so they are deliberately not used in this compatibility track. | Checked against the official [Compose BOM page](https://developer.android.com/develop/ui/compose/bom) and [AndroidX release notes](https://developer.android.com/jetpack/androidx/versions). Dependency resolution still needs CI. |
 
 ## 2. Feasibility matrix after source review
 
@@ -71,3 +71,17 @@ This research update informs the UI/foundation work added in-place to the existi
 ### Important distinction
 
 The current app already used AndroidX Compose and Material 3 before this work. The change is an architecture/UI improvement (Navigation Compose, theme tokens, DataStore, Room), not a migration away from a non-AndroidX UI framework. A full Gradle build is still required to validate the combined AGP/Kotlin/KSP/Compose versions.
+
+
+## 11. Build compatibility correction (2026-10-19)
+
+The latest GitHub Actions log failed during Gradle configuration of `:input-target`, before compilation. The exact error was `Cannot add extension with name 'kotlin', as there is an extension already registered with that name.` The module applied `org.jetbrains.kotlin.android` in addition to AGP 9 built-in Kotlin. The fix removes the redundant Kotlin Android plugin and migrates `kotlinOptions` to the built-in `kotlin.compilerOptions` DSL.
+
+The project and both workflows now use `compileSdk = 36` and install `platforms;android-36`, as requested. To maintain that SDK baseline, Compose BOM is pinned to `2026.04.01`, Navigation Compose to `2.9.8`, and Lifecycle to `2.10.0`; Compose 1.12 / BOM `2026.08.00` and Lifecycle 2.11.0 require API 37 per official release notes. This is a compatibility selection based on published requirements, not a successful Android build claim.
+
+Sources:
+- AGP built-in Kotlin migration: https://developer.android.com/build/migrate-to-built-in-kotlin
+- Compose April 2026 release: https://developer.android.com/blog/posts/whats-new-in-the-jetpack-compose-april-26-release
+- Compose August 2026 release: https://developer.android.com/blog/posts/what-s-new-in-the-jetpack-compose-august-26-release
+- AndroidX Lifecycle release notes: https://developer.android.com/jetpack/androidx/releases/lifecycle
+- AndroidX Navigation release notes: https://developer.android.com/jetpack/androidx/releases/navigation

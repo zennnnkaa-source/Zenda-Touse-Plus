@@ -42,7 +42,7 @@ The permanent product name in this phase remains **InputBridge** (per the Phase 
 
 This starter deliberately does not contain a guessed `gradle-wrapper.jar`. The available environment did not provide an intact wrapper binary or Android SDK, so the CI workflow installs Gradle **9.6.0** explicitly instead of depending on an unverified wrapper. This avoids presenting a partial wrapper as valid.
 
-The CI workflow installs JDK 17, Android platform `android-37` and build-tools `36.0.0`, then runs:
+The CI workflow installs JDK 17, Android platform `android-36` and build-tools `36.0.0`, then runs:
 
 ```bash
 gradle :lab:lint :input-target:lint \

@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "dev.zenda.inputbridge.lab"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "dev.zenda.inputbridge.lab"
