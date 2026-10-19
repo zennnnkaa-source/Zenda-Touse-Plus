@@ -1,5 +1,4 @@
 
-
 name: Android Release
 
 on:
@@ -14,129 +13,246 @@ concurrency:
 
 jobs:
   release:
+    name: Build and publish Android release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
-      
-      
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
+          packages: 'platform-tools'
 
-      - name: Install SDK packages
+      - name: Install required Android SDK packages
+        shell: bash
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-      - name: Validate project
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Validate project structure
         run: python3 .github/scripts/validate_android_project.py .
-      - name: Find latest release
-        id: latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // empty')
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-      - name: Calculate next version
+
+      - name: Calculate next version from existing Git tags
         id: version
         env:
-          LATEST_TAG: ${{ steps.latest.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/tags?per_page=100" --jq '.[].name' > "$RUNNER_TEMP/existing-tags.txt"
           python3 - <<'PY'
-          import os,re
-          tag=os.environ.get("LATEST_TAG","").strip()
-          m=re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)",tag)
-          major,minor,patch=map(int,m.groups()) if m else (1,0,0)
-          if m: patch+=1
-          version=f"{major}.{minor}.{patch}"
-          code=major*1000000+minor*1000+patch
-          if code>2100000000: raise SystemExit("versionCode exceeds Android limit")
-          with open(os.environ["GITHUB_OUTPUT"],"a") as f:
-              f.write(f"version={version}\ncode={code}\n")
-          print(f"Next version: {version} (versionCode {code})")
+          import os
+          import re
+          from pathlib import Path
+
+          pattern = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+          versions = []
+
+          for line in Path(os.environ["RUNNER_TEMP"] + "/existing-tags.txt").read_text().splitlines():
+              match = pattern.fullmatch(line.strip())
+              if match:
+                  versions.append(tuple(map(int, match.groups())))
+
+          if versions:
+              major, minor, patch = max(versions)
+              patch += 1
+              if patch >= 1000:
+                  patch = 0
+                  minor += 1
+              if minor >= 1000:
+                  minor = 0
+                  major += 1
+          else:
+              major, minor, patch = 1, 0, 0
+
+          version = f"{major}.{minor}.{patch}"
+          version_code = major * 1000000 + minor * 1000 + patch
+
+          if version_code < 1 or version_code > 2100000000:
+              raise SystemExit(f"Invalid versionCode: {version_code}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\n")
+              output.write(f"code={version_code}\n")
+
+          print(f"Next version: {version}")
+          print(f"versionCode: {version_code}")
           PY
-      - name: Update Android version
+
+      - name: Update Android version in both app modules
         env:
           VERSION_NAME: ${{ steps.version.outputs.version }}
           VERSION_CODE: ${{ steps.version.outputs.code }}
+        shell: bash
         run: |
+          set -euo pipefail
           python3 - <<'PY'
-          import os,re,pathlib
-          roots=[pathlib.Path("lab"),pathlib.Path("input-target")]
+          import os
+          import pathlib
+          import re
+
+          roots = [pathlib.Path("lab"), pathlib.Path("input-target")]
+
           for root in roots:
-              files=[root/"build.gradle",root/"build.gradle.kts"]
-              file=next((p for p in files if p.is_file()),None)
-              if file is None: raise SystemExit(f"Missing build.gradle in {root}")
-              s=file.read_text()
-              s,n1=re.subn(r'(\bversionCode\s*(?:=\s*)?)\d+',lambda m:m.group(1)+os.environ["VERSION_CODE"],s,count=1)
-              s,n2=re.subn(r'(\bversionName\s*(?:=\s*)?")[^"]*(")',lambda m:m.group(1)+os.environ["VERSION_NAME"]+m.group(2),s,count=1)
-              if not n1 or not n2: raise SystemExit(f"Could not update versionCode/versionName in {file}; configure them in defaultConfig first")
-              file.write_text(s)
-              print(f"Updated {file}")
+              candidates = [
+                  root / "build.gradle",
+                  root / "build.gradle.kts"
+              ]
+              build_file = next(
+                  (path for path in candidates if path.is_file()),
+                  None
+              )
+
+              if build_file is None:
+                  raise SystemExit(
+                      f"Missing build.gradle or build.gradle.kts in {root}"
+                  )
+
+              content = build_file.read_text(encoding="utf-8")
+
+              content, code_count = re.subn(
+                  r"(\bversionCode\s*(?:=\s*)?)\d+",
+                  lambda m: m.group(1) + os.environ["VERSION_CODE"],
+                  content,
+                  count=1
+              )
+
+              content, name_count = re.subn(
+                  r'(\bversionName\s*(?:=\s*)?")[^"]*(")',
+                  lambda m: m.group(1) + os.environ["VERSION_NAME"] + m.group(2),
+                  content,
+                  count=1
+              )
+
+              if code_count != 1 or name_count != 1:
+                  raise SystemExit(
+                      f"Cannot update versionCode/versionName in {build_file}. "
+                      "Check defaultConfig in this file."
+                  )
+
+              build_file.write_text(content, encoding="utf-8")
+              print(f"Updated {build_file}")
+
           PY
+
       - name: Build and test signed Release APKs
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
         run: |
           set -euo pipefail
+
           for name in KEYSTORE_BASE64 KEY_ALIAS STORE_PASSWORD KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Missing GitHub Secret: $name"
               exit 1
             fi
           done
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release-key.jks"
-          gradle \
+
+          KEYSTORE_FILE="$RUNNER_TEMP/release-key.jks"
+          trap 'rm -f "$KEYSTORE_FILE"' EXIT
+
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_FILE"
+          test -s "$KEYSTORE_FILE"
+
+          gradle --no-daemon \
             :lab:lint \
             :input-target:lint \
             :lab:testDebugUnitTest \
             :input-target:testDebugUnitTest \
             :lab:assembleRelease \
             :input-target:assembleRelease \
-            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release-key.jks" \
+            -Pandroid.injected.signing.store.file="$KEYSTORE_FILE" \
             -Pandroid.injected.signing.store.password="$STORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
             --stacktrace
-          mkdir -p release-files
-          find lab/build/outputs/apk/release input-target/build/outputs/apk/release -type f -name '*.apk' -print
-          find lab/build/outputs/apk/release -type f -name '*.apk' -exec cp {} release-files/lab-release.apk \;
-          find input-target/build/outputs/apk/release -type f -name '*.apk' -exec cp {} release-files/input-target-release.apk \;
-          test -s release-files/lab-release.apk
-          test -s release-files/input-target-release.apk
-          sha256sum release-files/*.apk > release-files/SHA256SUMS.txt
-      - name: Verify APK signatures
+
+      - name: Collect Release APKs
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          output_dir = Path("release-files")
+          output_dir.mkdir(parents=True, exist_ok=True)
+
+          modules = {
+              "lab": Path("lab/build/outputs/apk/release"),
+              "input-target": Path("input-target/build/outputs/apk/release"),
+          }
+
+          copied = []
+
+          for module, directory in modules.items():
+              apks = sorted(directory.rglob("*.apk")) if directory.is_dir() else []
+
+              if not apks:
+                  raise SystemExit(f"No Release APK found in {directory}")
+
+              for index, apk in enumerate(apks, start=1):
+                  if len(apks) == 1:
+                      filename = f"{module}-release.apk"
+                  else:
+                      filename = f"{module}-{index}-{apk.stem}.apk"
+
+                  destination = output_dir / filename
+                  shutil.copy2(apk, destination)
+                  copied.append(destination)
+                  print(f"Collected {destination}")
+
+          if len(copied) < 2:
+              raise SystemExit(
+                  "Expected APKs from both lab and input-target"
+              )
+          PY
+
+          sha256sum release-files/*.apk > release-files/SHA256SUMS.txt
+
+      - name: Verify APK signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$APKSIGNER"
+
           for apk in release-files/*.apk; do
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+            echo "Verifying $apk"
+            "$APKSIGNER" verify --verbose "$apk"
           done
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
         run: |
-          gh release create "v$VERSION" \
-            release-files/lab-release.apk \
-            release-files/input-target-release.apk \
-            release-files/SHA256SUMS.txt \
+          set -euo pipefail
+
+          gh release create "v${VERSION}" \
+            release-files/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Android Release v$VERSION" \
+            --title "Android Release v${VERSION}" \
             --generate-notes
