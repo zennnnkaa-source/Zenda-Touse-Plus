@@ -199,13 +199,14 @@ class AdbPairingNotificationService : Service() {
                 } catch (error: Exception) {
                     // Keep the six-digit code out of logs; retain the full exception chain for diagnosis.
                     Log.e("ZendaPairing", "Wireless ADB pairing failed; pairing code redacted", error)
-                    val root = generateSequence(error) { it.cause }.last()
+                    val causeChain = generateSequence<Throwable>(error) { it.cause }.toList()
+                    val root = causeChain.last()
                     val message = when {
                         error is java.net.ConnectException || root is java.net.ConnectException ->
                             "Cannot connect to the discovered pairing port. Reopen the Android pairing dialog and retry."
                         error is java.net.SocketTimeoutException || root is java.net.SocketTimeoutException ->
                             "Pairing timed out. Reopen the Android pairing dialog and use a fresh code."
-                        generateSequence(error) { it.cause }.any { it is java.security.cert.CertificateException } ->
+                        causeChain.any { it is java.security.cert.CertificateException } ->
                             "The ADB TLS certificate could not be accepted. This version creates a fresh local ADB identity; fully close and reopen Zenda Touse Plus, then retry with a new pairing code."
                         else -> {
                             val detail = root.message?.takeIf { it.isNotBlank() }?.take(120)
