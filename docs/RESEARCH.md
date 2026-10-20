@@ -123,3 +123,11 @@ Shizuku's main application source states Apache-2.0 for code files, while the se
 ### Validation status
 
 Source-level implementation and pure policy/state tests were added. Static structure/YAML/XML checks can be run in this environment, but the Android Gradle build, RemoteInput behavior on an OEM notification shade, and a real successful pairing session require CI and a physical Android 11+ device. These are not marked as passed here.
+
+
+## Phase 5 — Certificate interoperability and notification pairing (2026-10-20)
+
+- Reviewed the upstream `libadb-android` certificate-generation example. It includes `SubjectKeyIdentifier`, `PrivateKeyUsage`, explicit `CertificateSubjectName`/`CertificateIssuerName` wrappers, and an RSA self-signed X.509 certificate. The previous project code omitted the two extensions and used direct `X500Name` values. The updated implementation follows the library's documented certificate shape and verifies certificate validity, self-signature, and private-key/public-key correspondence before persistence. Source: https://github.com/MuntashirAkon/libadb-android#configuring-adb
+- Versioned the encrypted identity and Android Keystore wrapping alias so the new build does not reuse the older certificate. This intentionally means pairing may need to be repeated once after updating.
+- Reviewed Shizuku's open-source `AdbPairingService.kt`: the service searches for the active Wireless debugging pairing port, offers notification `RemoteInput`, performs pairing on a background dispatcher, and surfaces the actual failure. The existing Zenda notification flow retains that interaction pattern with independent implementation and an in-app fallback. Source: https://github.com/RikkaApps/Shizuku/blob/master/manager/src/main/java/moe/shizuku/manager/adb/AdbPairingService.kt
+- Runtime `CertificateException` remains unverified until a real Android device pairs successfully. If it persists, the new `ZendaPairing` Logcat entry captures the exception chain without intentionally logging the pairing code.

@@ -168,7 +168,7 @@ fun LabScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("InputBridge", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text("Zenda Touse Plus", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                         Text("Zenda Touse Plus · Native Foundation", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -321,7 +321,7 @@ private fun HomeScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Filled.TouchApp, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("InputBridge Test Target", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text("Zenda Touse Plus Test Target", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Text("Checks real events delivered to a separate Activity.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

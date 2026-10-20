@@ -9,7 +9,8 @@ The project is designed for phone-first development and repeatable GitHub Action
 - **Guided activation:** A dedicated Direct flow guides the user through Android Developer Options and Wireless Debugging, then tracks discovery, code entry, pairing, connection, and helper readiness.
 - **Shizuku integration:** Checks Shizuku availability and permission state, observes Binder lifecycle changes, and supports a separate helper-service probe.
 - **Wireless ADB pairing:** Discovers Android's pairing service through network service discovery (mDNS/NSD), uses the active host and dynamic port, and submits the six-digit code displayed by Android through the real ADB pairing protocol.
-- **Notification code entry:** When notifications are available and the device supports the interaction, the ongoing pairing notification exposes an inline code field after a pairing endpoint is discovered. An in-app code field remains available as a fallback for denied notification permission or OEM notification behavior.
+- **Notification code entry:** Follows the open-source Shizuku interaction pattern: an ongoing pairing notification exposes inline `RemoteInput` only after discovery, with an in-app fallback for denied notification permission or OEM notification behavior. The implementation is independently written and does not copy Shizuku code or artwork.
+- **ADB certificate handling:** Creates an RSA client identity with SubjectKeyIdentifier and PrivateKeyUsage extensions, verifies the generated X.509 certificate and key match before saving, encrypts the private-key payload with Android Keystore AES-GCM, and uses a versioned identity file so the revised certificate format is generated on upgrade. The first pairing after this update must be repeated because the local ADB identity is rotated. Runtime pairing failures are written to Logcat without intentionally logging the pairing code.
 - **Connection discovery:** Searches separately for the Wireless ADB connection endpoint. Pairing and connecting are different operations and are reported independently.
 - **Restricted helper commands:** Direct ADB is used to locate the Lab APK and bootstrap the on-device helper. The helper path uses a small allowlist instead of exposing an arbitrary shell command interface.
 - **Input verification target:** A separate app records key, touch, mouse, scroll, and pointer-capture events that actually reach it. This provides a concrete way to distinguish successful activation from successful input delivery.
@@ -24,8 +25,8 @@ The project is designed for phone-first development and repeatable GitHub Action
 
 | App | Application ID | Purpose |
 | --- | --- | --- |
-| **InputBridge Lab** | `dev.zenda.inputbridge.lab` | Main UI, Shizuku status and helper probe, Wireless ADB pairing/connection, helper bootstrap, diagnostics, settings, and local probe history. |
-| **InputBridge Test Target** | `dev.zenda.inputbridge.target` | Separate target application for displaying input events actually delivered to the app. |
+| **Zenda Touse Plus** | `dev.zenda.inputbridge.lab` | Main UI, Shizuku status and helper probe, Wireless ADB pairing/connection, helper bootstrap, diagnostics, settings, and local probe history. |
+| **Zenda Touse Plus Test Target** | `dev.zenda.inputbridge.target` | Separate target application for displaying input events actually delivered to the app. |
 
 Keeping the test target separate is intentional: seeing “paired,” receiving a shell response, or starting a helper is not proof that a target application received a key or touch event.
 
@@ -37,11 +38,11 @@ Keeping the test target separate is intentional: seeing “paired,” receiving 
 4. InputBridge passes the code and discovered endpoint to its ADB pairing implementation and displays the actual result.
 5. After pairing succeeds, the app separately looks for the ADB connection endpoint and attempts to connect.
 6. The app locates its helper, starts it through the restricted bootstrap path, and reports helper readiness.
-7. Use **InputBridge Test Target** to verify whether the expected key, touch, or pointer event arrived.
+7. Use **Zenda Touse Plus Test Target** to verify whether the expected key, touch, or pointer event arrived.
 
 Pairing and connection rely on Android's Wireless Debugging implementation and local-network discovery. On some Wi-Fi networks, routers, or OEM builds, mDNS discovery or notification inline input can be restricted. In those cases, the in-app code field and available manual endpoint controls can be used where applicable. Android 16's local-network restrictions may also require the nearby-device permission path provided by the app.
 
-## InputBridge Lab capabilities
+## Zenda Touse Plus capabilities
 
 ### Shizuku
 
@@ -67,7 +68,7 @@ Pairing and connection rely on Android's Wireless Debugging implementation and l
 - Store a bounded history of predefined provider/action/outcome values and timestamps, not arbitrary command output or pairing codes.
 - Persist the theme preference using DataStore and keep the recent-probe history in Room.
 
-## InputBridge Test Target
+## Zenda Touse Plus Test Target
 
 The test target is intentionally a separate Android application. It provides a visible event log for input that reaches the app, including:
 
@@ -124,8 +125,8 @@ The release job fails rather than publishing if lint/tests, signing validation, 
 ├── .github/
 │   ├── scripts/validate_android_project.py
 │   └── workflows/android-ci.yml
-├── lab/                  # InputBridge Lab app
-├── input-target/         # Separate event-verification app
+├── lab/                  # Zenda Touse Plus main app
+├── input-target/         # Zenda Touse Plus Test Target app
 ├── gradle/               # Version catalog and dependency versions
 ├── docs/                 # Architecture, research, test and license notes
 └── README.md

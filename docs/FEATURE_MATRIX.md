@@ -58,3 +58,8 @@
 | Pairing-code privacy | Key recording paused while the six-digit pairing-code field has focus | SOURCE IMPLEMENTED | UI focus regression on Android device |
 | Axis utilities | Centered/unipolar normalization, dead zone, inversion, sensitivity and pair transform | SOURCE IMPLEMENTED / POLICY SMOKE PASSED | JUnit task in Android Release CI |
 | System-wide input capture | Events while another app is foreground | NOT PROVIDED BY THIS DIAGNOSTICS CORE | Separate privileged backend and authorized target verification |
+
+
+| Phase 5 ADB certificate identity | Implemented in source; runtime pairing pending | Certificate now has explicit SubjectKeyIdentifier and PrivateKeyUsage extensions, and is verified before persistence; v2 identity file forces regeneration. |
+| Notification pairing diagnostics | Implemented in source; device unverified | Logcat keeps exception chain while not intentionally including the submitted pairing code; notification gives a certificate-specific recovery message. |
+| Zenda Touse Plus branding and Test Target UI | Implemented in source; visual/device review pending | Main app label is Zenda Touse Plus; target app uses a redesigned dark event-monitor UI. |

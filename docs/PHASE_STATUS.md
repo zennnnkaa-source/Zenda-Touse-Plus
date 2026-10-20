@@ -1,6 +1,6 @@
 # Phase Status — Zenda Touse Plus / InputBridge
 
-**As of:** 2026-10-20 (Device Discovery & Diagnostics Core implementation)
+**As of:** 2026-10-20 (Phase 5 — ADB certificate reliability, notification pairing diagnostics, and Test Target UI)
 
 ## Status summary
 
@@ -11,8 +11,8 @@
 | Repository strategy | Continue in the existing repository; no separate phase project |
 | Phase 0 | **PASS (documents only)**; original records are preserved in `docs/phase0-snapshot/` |
 | Phase 1 app flow | **USER-REPORTED USABLE**; input delivery to the separate Test Target remains **UNVERIFIED** unless the target's event log visibly confirms it |
-| Current phase | **Phase 4 — Device Discovery & Diagnostics Core**; implemented in-place on the existing project |
-| Current requested work | **Device Discovery & Diagnostics Core** implemented in-place on the existing project |
+| Current phase | **Phase 5 — ADB certificate reliability, notification pairing diagnostics, and Test Target UI**; implemented in-place on the existing project |
+| Current requested work | **ADB certificate reliability, notification pairing diagnostics, Test Target UI, and Zenda Touse Plus branding** implemented in-place on the existing project |
 | Navigation selection fix | **IMPLEMENTED IN SOURCE; CI pending for this revision** — selected tab is derived from the exact current destination route |
 | Direct activation flow | **IMPLEMENTED IN SOURCE; DEVICE UNVERIFIED** — discovers mDNS endpoints, supports notification RemoteInput and in-app fallback, requests six-digit code, then attempts Pair → Connect → Helper automatically |
 | Structural project audit | **0 errors, 1 known warning** for missing Gradle Wrapper files; CI installs pinned Gradle 9.6.0 explicitly |
@@ -72,3 +72,14 @@ Implemented an Activity-scoped `InputDiagnosticsController` using public Android
 The event monitor is intentionally **not system-wide**. It does not claim to receive events while another app is foregrounded; this is a diagnostic foundation for the upcoming dedicated labs, not a mapping engine. Event summaries do not store typed character text. Device descriptors are runtime observations and do not guarantee that a device will deliver events.
 
 Status: **SOURCE IMPLEMENTED / UNIT TESTS ADDED / ANDROID GRADLE BUILD NOT RUN / PHYSICAL DEVICE NOT VERIFIED**. Tests cover bounded logs, key state transitions and release, centered/unipolar axis normalization, and pair transforms. The GitHub Release workflow now maps the four repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD` in both signing-related steps.
+
+
+## Phase 5 — ADB certificate reliability, notification diagnostics, and refreshed target UI (2026-10-20)
+
+- Reworked the ADB X.509 identity generation to follow the documented `libadb-android` example structure: explicit subject/issuer wrappers, SubjectKeyIdentifier, PrivateKeyUsage, a stable RSA signing algorithm, validity checks, and self-signature verification before persistence.
+- Bumped the identity file from `adb-identity-v1.bin` to `adb-identity-v2.bin` so a previously saved certificate from the earlier implementation is not reused after updating. The private key payload remains encrypted with an Android Keystore AES-GCM wrapping key.
+- Pairing exceptions are now written to Logcat with the code intentionally omitted from the log message; notification text distinguishes certificate failures from connection and timeout failures.
+- Changed the main app label to **Zenda Touse Plus** and the companion app label to **Zenda Touse Plus Test Target**. Redesigned the Test Target with a dark high-contrast header, rounded control buttons, a dedicated touch/pointer surface, and a live event-stream panel while retaining real event dispatch and bounded logs.
+- Version names are set to `0.5.0` in both modules.
+
+Status: **SOURCE CHANGED / STATIC CHECKS PENDING / ANDROID GRADLE BUILD AND PHYSICAL PAIRING NOT VERIFIED**. The user-reported `CertificateException` cannot be confirmed fixed until a new APK is installed and a fresh six-digit code succeeds on the target device.

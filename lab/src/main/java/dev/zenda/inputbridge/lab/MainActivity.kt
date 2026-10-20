@@ -455,7 +455,7 @@ class MainActivity : ComponentActivity() {
             recordProbe(ProbeProvider.TEST_TARGET, ProbeAction.OPEN_TARGET, ProbeOutcome.SUCCEEDED)
         } catch (e: Exception) {
             recordProbe(ProbeProvider.TEST_TARGET, ProbeAction.OPEN_TARGET, ProbeOutcome.FAILED)
-            adbStatus.value = "Target could not open. Install InputBridge Test Target APK beside the Lab."
+            adbStatus.value = "Target could not open. Install the Zenda Touse Plus Test Target APK beside the main app."
         }
     }
 

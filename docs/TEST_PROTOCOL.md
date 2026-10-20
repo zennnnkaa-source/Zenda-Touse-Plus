@@ -2,8 +2,8 @@
 
 ## Safety and setup
 
-1. Use an Android 11+ emulator or physical test device you control. Prefer a physical device for Wireless debugging and input injection results. Test only the dedicated InputBridge Test Target or another app you are authorized to test.
-2. Build/install **both** APKs: `InputBridge Lab` and `InputBridge Test Target`. Check that both install and launch independently.
+1. Use an Android 11+ emulator or physical test device you control. Prefer a physical device for Wireless debugging and input injection results. Test only the dedicated Zenda Touse Plus Test Target or another app you are authorized to test.
+2. Build/install **both** APKs: `Zenda Touse Plus` and `Zenda Touse Plus Test Target`. Check that both install and launch independently.
 3. Record device model, Android version/build number, API level, security patch, app version, date/time and whether the session uses Wi-Fi or mobile data. Do not paste ADB pairing codes, ADB private keys, or personal network details into a public report.
 4. Open the target app once and verify it starts with a blank/waiting event log. The target does not fabricate incoming events.
 
@@ -21,7 +21,7 @@
 2. In Lab, tap `Check status`. Record the actual state; if Binder is unavailable, stop here and fix that before proceeding.
 3. Tap `Request permission` and respond on the Shizuku authorization prompt. Deny once as a recovery test, then retry and grant.
 4. Tap `Bind helper`. Wait for the bind callback. Record the reported process UID. Do not call UID 2000 root; do not claim injection from UID alone.
-5. Tap `Open InputBridge Test Target` to verify it launches. Return to the Lab and run `Test one tap`, then `Test one swipe` in the Shizuku card. The shared helper issues a bounded numeric tap or 500 ms horizontal swipe after opening the target; inspect for actual `TOUCH DOWN/UP` and `MOVE` rows. A helper response alone is not a pass.
+5. Tap `Open Zenda Touse Plus Test Target` to verify it launches. Return to the Lab and run `Test one tap`, then `Test one swipe` in the Shizuku card. The shared helper issues a bounded numeric tap or 500 ms horizontal swipe after opening the target; inspect for actual `TOUCH DOWN/UP` and `MOVE` rows. A helper response alone is not a pass.
 6. Inspect the target's event log. If a new real `TOUCH DOWN/UP` appears at the expected time, record it with a screenshot/log that contains no secrets. If nothing appears, the result is fail/unverified even if the shared helper returns a command response.
 7. Tap `Read result` for the helper-side result. Record permission denial, binder death, helper failure or no target event independently.
 8. Unbind or stop the service and confirm the socket helper is stopped. Stop/restart Shizuku or reboot only if safe for the test device, then confirm Lab reports the binder/helper as unavailable instead of stale success. Rebind and repeat.
@@ -82,10 +82,14 @@ The Lab reports helper round-trip time, which includes command execution and res
 
 ## Device Discovery & Diagnostics Core checks
 
-1. Open InputBridge Lab → Diagnostics and record the currently enumerated devices. Do not assume every enumerated device is an external peripheral; Android can expose built-in and virtual devices.
+1. Open Zenda Touse Plus → Diagnostics and record the currently enumerated devices. Do not assume every enumerated device is an external peripheral; Android can expose built-in and virtual devices.
 2. Connect/disconnect a USB or Bluetooth keyboard/mouse/controller while the Lab Activity is visible. Confirm the device list refreshes and a DEVICE event appears. Check that a detached device's held keys are cleared.
 3. Focus the Lab Activity outside text fields. Press/release a hardware keyboard key and hold it long enough to produce repeats. Confirm DOWN, repeat count, and UP appear, and that another device's same key code is tracked separately.
 4. Focus the six-digit pairing-code field and type a test value only if needed for a controlled pairing attempt. Confirm key-event recording is paused while that field is focused; do not include any actual pairing code in screenshots or logs. Move focus away and verify recording resumes.
 5. Move/click/scroll a mouse and move each controller stick/trigger while the Lab Activity is foreground. Check source labels, button bitmask, and available axis names/values. A missing axis in a particular event is not proof that the hardware lacks it; consult the device's reported motion ranges.
 6. Leave the Activity or open another app. The Lab's monitor must unregister and clear pressed-key state. On return, monitoring restarts and the device registry refreshes. Events generated in another app are not captured by this monitor.
 7. Run `:lab:testDebugUnitTest` in the `Android Release` workflow. Record the workflow URL and commit before marking automated tests as passed.
+
+## Phase 5 ADB identity migration
+
+After installing this revision, run Pair again using a fresh six-digit code from the currently open Android Wireless debugging dialog. The app uses a new local ADB identity to avoid reusing the previous certificate.

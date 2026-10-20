@@ -6,10 +6,16 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.sun.security.x509.AlgorithmId
 import android.sun.security.x509.CertificateAlgorithmId
+import android.sun.security.x509.CertificateExtensions
+import android.sun.security.x509.CertificateIssuerName
+import android.sun.security.x509.CertificateSubjectName
 import android.sun.security.x509.CertificateSerialNumber
 import android.sun.security.x509.CertificateValidity
 import android.sun.security.x509.CertificateVersion
 import android.sun.security.x509.CertificateX509Key
+import android.sun.security.x509.KeyIdentifier
+import android.sun.security.x509.PrivateKeyUsageExtension
+import android.sun.security.x509.SubjectKeyIdentifierExtension
 import android.sun.security.x509.X500Name
 import android.sun.security.x509.X509CertImpl
 import android.sun.security.x509.X509CertInfo
@@ -26,8 +32,10 @@ import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
 import java.security.SecureRandom
+import java.security.Signature
 import java.security.cert.Certificate
 import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -37,9 +45,9 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Experimental Phase 1 wrapper around libadb-android. The ADB key's private
- * bytes are encrypted with an Android Keystore AES-GCM key before persistence.
- * This code has not yet been audited or validated on a physical device.
+ * ADB identity manager for Wireless debugging. Private-key bytes are encrypted
+ * with an Android Keystore AES-GCM key before persistence. Pairing still requires
+ * GitHub Actions validation and confirmation on a physical Android device.
  */
 class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
     companion object {
@@ -57,7 +65,8 @@ class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
     }
 
     private val appContext = context.applicationContext
-    private val identityFile = File(appContext.filesDir, "adb-identity-v1.bin")
+    private val identityFile = File(appContext.filesDir, "adb-identity-v2.bin")
+    private val legacyIdentityFile = File(appContext.filesDir, "adb-identity-v1.bin")
     private val privateKey: PrivateKey
     private val certificate: Certificate
 
@@ -72,7 +81,7 @@ class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
 
     override fun getPrivateKey(): PrivateKey = privateKey
     override fun getCertificate(): Certificate = certificate
-    override fun getDeviceName(): String = "InputBridge-Phase1"
+    override fun getDeviceName(): String = "Zenda Touse Plus"
 
     @Synchronized
     @Throws(IOException::class, InterruptedException::class)
@@ -138,7 +147,8 @@ class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
                 require(input.available() == 0)
                 val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyBytes))
                 val cert = CertificateFactory.getInstance("X.509")
-                    .generateCertificate(ByteArrayInputStream(certBytes))
+                    .generateCertificate(ByteArrayInputStream(certBytes)) as X509Certificate
+                validateIdentityPair(key, cert)
                 return key to cert
             } catch (_: Exception) {
                 // If the wrapping key was invalidated, discard only this app's damaged ADB identity.
@@ -150,17 +160,27 @@ class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
         generator.initialize(2048, SecureRandom())
         val keyPair = generator.generateKeyPair()
         val now = System.currentTimeMillis()
-        val subject = X500Name("CN=InputBridge Phase 1")
+        val notBefore = Date(now - 60_000L)
+        val notAfter = Date(now + 365L * 24L * 60L * 60L * 1000L)
+        val subject = X500Name("CN=Zenda Touse Plus")
+        val extensions = CertificateExtensions().apply {
+            set("SubjectKeyIdentifier", SubjectKeyIdentifierExtension(KeyIdentifier(keyPair.public).identifier))
+            set("PrivateKeyUsage", PrivateKeyUsageExtension(notBefore, notAfter))
+        }
         val info = X509CertInfo().apply {
             set("version", CertificateVersion(2))
-            set("serialNumber", CertificateSerialNumber(BigInteger.valueOf((now and Long.MAX_VALUE).coerceAtLeast(1L))))
-            set("algorithmID", CertificateAlgorithmId(AlgorithmId.get("SHA256withRSA")))
-            set("subject", subject)
+            set("serialNumber", CertificateSerialNumber(BigInteger.valueOf((SecureRandom().nextInt().toLong() and 0x7fffffffL).coerceAtLeast(1L))))
+            set("algorithmID", CertificateAlgorithmId(AlgorithmId.get("SHA512withRSA")))
+            set("subject", CertificateSubjectName(subject))
             set("key", CertificateX509Key(keyPair.public))
-            set("validity", CertificateValidity(Date(now - 60_000), Date(now + 365L * 24 * 60 * 60 * 1000)))
-            set("issuer", subject)
+            set("validity", CertificateValidity(notBefore, notAfter))
+            set("issuer", CertificateIssuerName(subject))
+            set("extensions", extensions)
         }
-        val signedCertificate = X509CertImpl(info).apply { sign(keyPair.private, "SHA256withRSA") }
+        val signedCertificate = X509CertImpl(info).apply { sign(keyPair.private, "SHA512withRSA") }
+        signedCertificate.checkValidity(Date())
+        signedCertificate.verify(keyPair.public)
+        validateIdentityPair(keyPair.private, signedCertificate)
         val payloadBytes = ByteArrayOutputStream().use { bytes ->
             DataOutputStream(bytes).use { output ->
                 val keyBytes = keyPair.private.encoded
@@ -171,12 +191,34 @@ class AdbConnectionManager(context: Context) : AbsAdbConnectionManager() {
             bytes.toByteArray()
         }
         identityFile.writeBytes(encrypt(payloadBytes))
+        // The old identity is intentionally not reused because it was generated without the documented extensions.
+        if (legacyIdentityFile.exists()) legacyIdentityFile.delete()
+        runCatching {
+            java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry("zenda.inputbridge.adb.identity.wrap.v1")
+        }
         return keyPair.private to signedCertificate
+    }
+
+    private fun validateIdentityPair(privateKey: PrivateKey, certificate: X509Certificate) {
+        certificate.checkValidity(Date())
+        val challenge = "Zenda Touse Plus ADB identity v2".toByteArray(Charsets.UTF_8)
+        val signed = Signature.getInstance("SHA512withRSA").run {
+            initSign(privateKey)
+            update(challenge)
+            sign()
+        }
+        val matches = Signature.getInstance("SHA512withRSA").run {
+            initVerify(certificate.publicKey)
+            update(challenge)
+            verify(signed)
+        }
+        require(matches) { "The stored ADB private key does not match its X.509 certificate." }
     }
 
     private fun wrappingKey(): SecretKey {
         val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val alias = "zenda.inputbridge.adb.identity.wrap.v1"
+        val alias = "zenda.inputbridge.adb.identity.wrap.v2"
         (keyStore.getKey(alias, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
         generator.init(
