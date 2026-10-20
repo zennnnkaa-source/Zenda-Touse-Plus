@@ -17,7 +17,7 @@ The Lab Activity records only events that Android dispatches to its own window:
 
 - `KeyEvent`: down, repeat, up, key-code label, repeat count, meta state, device ID, and source.
 - `MotionEvent`: action, source class, pointer count, button-state bitmask, and values for a bounded set of axes exposed by the device (axis values are sampled from pointer index 0 when the event has multiple pointers).
-- The controller does not read events from other apps, intercept system-wide input, or fabricate test events. An empty event log means no matching event has reached this Activity during the current monitoring window; it does not prove the device is unsupported.
+- The observer wraps the Activity window's public `Window.Callback` interface and delegates every callback to the original Activity callback; it does not override AndroidX `ComponentActivity`'s restricted dispatch methods. The controller does not read events from other apps, intercept system-wide input, or fabricate test events. An empty event log means no matching event has reached this Activity during the current monitoring window; it does not prove the device is unsupported.
 
 ## Bounded state and lifecycle
 

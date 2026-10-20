@@ -22,6 +22,7 @@ import android.view.WindowManager
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,6 +67,8 @@ class MainActivity : ComponentActivity() {
     private val recentRuns = mutableStateOf<List<ProbeRunEntity>>(emptyList())
     private val inputDiagnosticsSnapshot = mutableStateOf(InputDiagnosticsSnapshot())
     private val inputDiagnosticsController by lazy { InputDiagnosticsController(applicationContext) }
+    private var originalInputDiagnosticsWindowCallback: Window.Callback? = null
+    private var inputDiagnosticsWindowCallback: Window.Callback? = null
     private val directStage = mutableStateOf("idle")
     private val pairingEndpoint = mutableStateOf<AdbDiscoveredEndpoint?>(null)
     private val connectionServiceEndpoint = mutableStateOf<AdbDiscoveredEndpoint?>(null)
@@ -253,6 +256,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        installInputDiagnosticsWindowCallback()
     }
 
     override fun onStart() {
@@ -265,23 +269,47 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        inputDiagnosticsController.recordKeyEvent(event)
-        return super.dispatchKeyEvent(event)
-    }
+    /**
+     * Observe events through the public Window.Callback interface instead of overriding
+     * ComponentActivity's restricted dispatch methods. Delegation preserves the original
+     * Activity callback and normal Android/Compose event routing.
+     */
+    private fun installInputDiagnosticsWindowCallback() {
+        if (inputDiagnosticsWindowCallback != null) return
+        val original = window.callback ?: return
+        val observer = object : Window.Callback by original {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                inputDiagnosticsController.recordKeyEvent(event)
+                return original.dispatchKeyEvent(event)
+            }
 
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        inputDiagnosticsController.recordMotionEvent(event)
-        return super.dispatchGenericMotionEvent(event)
-    }
+            override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+                inputDiagnosticsController.recordMotionEvent(event)
+                return original.dispatchGenericMotionEvent(event)
+            }
 
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        // Mouse button presses can arrive through the touch dispatch path; do not record
-        // ordinary touchscreen taps here as keyboard/mouse/controller diagnostics.
-        if ((event.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
-            inputDiagnosticsController.recordMotionEvent(event)
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                // Mouse button presses may use the touch dispatch path. Ignore ordinary
+                // touchscreen gestures here to avoid polluting mouse/controller diagnostics.
+                if ((event.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+                    inputDiagnosticsController.recordMotionEvent(event)
+                }
+                return original.dispatchTouchEvent(event)
+            }
         }
-        return super.dispatchTouchEvent(event)
+        originalInputDiagnosticsWindowCallback = original
+        inputDiagnosticsWindowCallback = observer
+        window.callback = observer
+    }
+
+    private fun restoreInputDiagnosticsWindowCallback() {
+        val observer = inputDiagnosticsWindowCallback ?: return
+        val original = originalInputDiagnosticsWindowCallback
+        if (original != null && window.callback === observer) {
+            window.callback = original
+        }
+        inputDiagnosticsWindowCallback = null
+        originalInputDiagnosticsWindowCallback = null
     }
 
     override fun onResume() {
@@ -325,6 +353,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        restoreInputDiagnosticsWindowCallback()
         directDiscovery?.close()
         directDiscovery = null
         if (pairingResultReceiverRegistered) {
