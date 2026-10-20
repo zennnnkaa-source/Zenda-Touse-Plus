@@ -161,33 +161,37 @@ class InputDiagnosticsController(context: Context) : InputManager.InputDeviceLis
         }
     }
 
-    private fun readDevices(): List<InputDeviceDescriptor> = InputDevice.getDeviceIds().mapNotNull { id ->
-        val device = InputDevice.getDevice(id) ?: return@mapNotNull null
-        val ranges = device.motionRanges.map { range ->
-            InputAxisDescriptor(
-                axis = range.axis,
-                axisName = MotionEvent.axisToString(range.axis),
-                source = range.source,
-                sourceName = sourceName(range.source),
-                min = range.min,
-                max = range.max,
-                flat = range.flat,
-                fuzz = range.fuzz,
-                resolution = range.resolution
+    private fun readDevices(): List<InputDeviceDescriptor> = InputDevice.getDeviceIds()
+        .asSequence()
+        .mapNotNull { id ->
+            val device = InputDevice.getDevice(id) ?: return@mapNotNull null
+            val ranges = device.motionRanges.map { range ->
+                InputAxisDescriptor(
+                    axis = range.axis,
+                    axisName = MotionEvent.axisToString(range.axis),
+                    source = range.source,
+                    sourceName = sourceName(range.source),
+                    min = range.min,
+                    max = range.max,
+                    flat = range.flat,
+                    fuzz = range.fuzz,
+                    resolution = range.resolution
+                )
+            }
+            InputDeviceDescriptor(
+                id = device.id,
+                name = device.name,
+                descriptor = device.descriptor,
+                sources = device.sources,
+                vendorId = device.vendorId,
+                productId = device.productId,
+                keyboardType = device.keyboardType,
+                isVirtual = device.isVirtual,
+                motionRanges = ranges
             )
         }
-        InputDeviceDescriptor(
-            id = device.id,
-            name = device.name,
-            descriptor = device.descriptor,
-            sources = device.sources,
-            vendorId = device.vendorId,
-            productId = device.productId,
-            keyboardType = device.keyboardType,
-            isVirtual = device.isVirtual,
-            motionRanges = ranges
-        )
-    }.sortedBy { it.name.lowercase() }
+        .sortedBy { it.name.lowercase() }
+        .toList()
 
     private fun motionAxisValues(event: MotionEvent): List<String> {
         val device = InputDevice.getDevice(event.deviceId)
