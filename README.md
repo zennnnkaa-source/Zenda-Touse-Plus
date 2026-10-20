@@ -14,6 +14,10 @@ The project is designed for phone-first development and repeatable GitHub Action
 - **Restricted helper commands:** Direct ADB is used to locate the Lab APK and bootstrap the on-device helper. The helper path uses a small allowlist instead of exposing an arbitrary shell command interface.
 - **Input verification target:** A separate app records key, touch, mouse, scroll, and pointer-capture events that actually reach it. This provides a concrete way to distinguish successful activation from successful input delivery.
 - **Modern Android UI:** Jetpack Compose, Material 3, Navigation Compose, a persistent light/dark theme preference, and a bounded local history of predefined probe actions and outcomes.
+- **Input-device discovery:** Enumerates Android-reported input devices through the public `InputDevice` APIs, including device identity metadata and supported motion ranges.
+- **Live input diagnostics:** Records `KeyEvent` and `MotionEvent` objects actually delivered to the Lab Activity, separates key actions from motion axes, and keeps a bounded recent-event log.
+- **Safe key-state tracking:** Tracks received key-down/repeat/up events and clears stale held-key state when a device detaches or monitoring stops.
+- **Axis calibration core:** Includes tested normalization helpers for centered axes and unipolar controls, with dead-zone, inversion, axis-swap, and sensitivity transforms.
 - **GitHub Release delivery:** The `Android Release` workflow runs quality checks, builds signed Release APKs for both apps, verifies their signatures, generates SHA-256 checksums, and publishes the APKs to a GitHub Release.
 
 ## Applications
@@ -59,6 +63,7 @@ Pairing and connection rely on Android's Wireless Debugging implementation and l
 - Use a narrowly defined command allowlist for the documented helper bootstrap and basic identity/probe checks.
 - Route helper communication through an authenticated loopback channel with a short-lived in-memory session token.
 - Present Home, Shizuku, Direct, Diagnostics, and Settings destinations.
+- Show the current device registry, motion-range metadata, pressed-key state, and the latest real input events on the Diagnostics screen. The event monitor observes only events delivered to the Lab app's own window; it is not system-wide input capture.
 - Store a bounded history of predefined provider/action/outcome values and timestamps, not arbitrary command output or pairing codes.
 - Persist the theme preference using DataStore and keep the recent-probe history in Room.
 
@@ -79,7 +84,7 @@ The test target is a verification instrument, not proof by itself that every act
 - **No custom backend:** pairing and helper communication stay on the device and its local network; there is no project-operated account service or analytics server.
 - **No root requirement for the documented route:** Wireless Debugging/ADB or a separately installed and authorized Shizuku service is used instead of assuming root access.
 - **No arbitrary shell UI:** privileged commands are constrained to known operations and a generated helper-bootstrap command.
-- **Transient secrets:** pairing codes are not persisted. The local helper session token is held in memory for the active session.
+- **Transient secrets:** pairing codes are not persisted. The local helper session token is held in memory for the active session. Key-event logging is automatically paused while the six-digit pairing-code field is focused, so those digits are not added to the diagnostics event log.
 - **Protected pairing result messages:** internal status broadcasts are package-scoped and registered with a not-exported flag and the app's signature-level permission.
 - **Conservative history:** the Room history contains predefined probe metadata and timestamps, not pairing codes, private-key bytes, free-form commands, or captured user input from other apps.
 
@@ -95,10 +100,10 @@ In the GitHub repository, open **Settings → Secrets and variables → Actions*
 
 | Secret name | Value |
 | --- | --- |
-| `KEYSTORE_BASE64` | The complete JKS/keystore file encoded as one Base64 string, without wrapping or extra labels. |
-| `KEY_ALIAS` | The alias of the signing key inside the keystore. |
-| `STORE_PASSWORD` | The keystore password. |
-| `KEY_PASSWORD` | The selected key's password. |
+| `ANDROID_KEYSTORE_BASE64` | The complete JKS/keystore file encoded as one Base64 string, without wrapping or extra labels. |
+| `ANDROID_KEY_ALIAS` | The alias of the signing key inside the keystore. |
+| `ANDROID_KEYSTORE_PASSWORD` | The keystore password. |
+| `ANDROID_KEY_PASSWORD` | The selected key's password. |
 
 The workflow checks that all four secrets are present, validates the keystore and key, and avoids printing their values. Keep the signing passwords compatible with the configured Android/Java signing tools; this workflow explicitly requires ASCII characters for password input.
 
@@ -133,6 +138,7 @@ Useful documentation:
 - [`docs/CAPABILITY_MATRIX.md`](docs/CAPABILITY_MATRIX.md) — capability evidence and platform constraints.
 - [`docs/FEASIBILITY_RESULTS.md`](docs/FEASIBILITY_RESULTS.md) — evidence ledger for observed results.
 - [`docs/RESEARCH.md`](docs/RESEARCH.md) — platform research and implementation decisions.
+- [`docs/DEVICE_DIAGNOSTICS.md`](docs/DEVICE_DIAGNOSTICS.md) — input-device discovery, event scope, state reset, axis transforms, and current limitations.
 - [`docs/THIRD_PARTY_NOTICES.md`](docs/THIRD_PARTY_NOTICES.md) — dependency and licensing notes.
 - [`docs/RISK_REGISTER.md`](docs/RISK_REGISTER.md) — known technical risks and mitigations.
 

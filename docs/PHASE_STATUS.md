@@ -1,6 +1,6 @@
 # Phase Status — Zenda Touse Plus / InputBridge
 
-**As of:** 2026-10-20 (Phase 3 in-place audit revision)
+**As of:** 2026-10-20 (Device Discovery & Diagnostics Core implementation)
 
 ## Status summary
 
@@ -11,14 +11,15 @@
 | Repository strategy | Continue in the existing repository; no separate phase project |
 | Phase 0 | **PASS (documents only)**; original records are preserved in `docs/phase0-snapshot/` |
 | Phase 1 app flow | **USER-REPORTED USABLE**; input delivery to the separate Test Target remains **UNVERIFIED** unless the target's event log visibly confirms it |
-| Current requested work | **Phase 3 — Notification-based Wireless ADB pairing + audit fixes**, implemented in-place on the Phase 1/2 foundation |
+| Current phase | **Phase 4 — Device Discovery & Diagnostics Core**; implemented in-place on the existing project |
+| Current requested work | **Device Discovery & Diagnostics Core** implemented in-place on the existing project |
 | Navigation selection fix | **IMPLEMENTED IN SOURCE; CI pending for this revision** — selected tab is derived from the exact current destination route |
 | Direct activation flow | **IMPLEMENTED IN SOURCE; DEVICE UNVERIFIED** — discovers mDNS endpoints, supports notification RemoteInput and in-app fallback, requests six-digit code, then attempts Pair → Connect → Helper automatically |
 | Structural project audit | **0 errors, 1 known warning** for missing Gradle Wrapper files; CI installs pinned Gradle 9.6.0 explicitly |
 | Gradle Wrapper | **MISSING** from source; CI installs Gradle 9.6.0 explicitly. A real wrapper binary must not be fabricated |
-| Latest Gradle build/test | **NOT RUN** in this authoring environment (no Android SDK or Gradle executable) |
+| Latest Gradle build/test | **NOT RUN** in this authoring environment; Kotlin/Android build is not claimed as passed |
 | GitHub Actions CI for newest revision | **PENDING** — run the single Android Release workflow after applying this update |
-| Release signing | `Android Release` requires non-empty `KEYSTORE_BASE64`, `KEY_ALIAS`, `STORE_PASSWORD`, and `KEY_PASSWORD`; the workflow validates the existing keystore and private key without printing secrets. Preserve the existing signing key. |
+| Release signing | `Android Release` reads repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD`; the workflow maps them to internal environment variables and validates the existing keystore and private key without printing secrets. Preserve the existing signing key. |
 | Shizuku → target input | **UNVERIFIED-DEVICE**; UID 2000 proves shell identity only, not that the target received a MotionEvent |
 | Direct ADB mDNS + notification Pair → Connect + helper | **EXPERIMENTAL / DEVICE UNVERIFIED**; mDNS lock lifecycle and Android 16 permission path now handled in source |
 | Input delivery to target | **UNVERIFIED** until the target app visibly records the expected event |
@@ -62,3 +63,12 @@ Phase 3 notification-driven Wireless ADB pairing is implemented in the existing 
 Status remains **SOURCE-REVIEWED / ANDROID BUILD NOT RUN / DEVICE NOT VERIFIED**. The source audit is not a substitute for the Android Release workflow, JUnit execution on Gradle, OEM Notification RemoteInput behavior, or a physical Android 11+ test. A green result must be recorded separately after the uploaded revision runs through GitHub Actions.
 
 Phase 3 review follow-up (2026-10-20): source policy smoke check passes 17 assertions; manifest XML and workflow YAML parse pass. Structural validation reports 0 errors and 1 known warning for the intentionally absent Gradle Wrapper. Notification discovery timeouts are no longer recorded as ADB protocol failures, and failed pairing invalidates the old RemoteInput session immediately. An auxiliary compiler check against temporary Android API stubs did not finish reliably and is not counted as validation. Android Gradle tasks and device behavior remain unverified in this environment.
+
+
+## Device Discovery & Diagnostics Core status (2026-10-20)
+
+Implemented an Activity-scoped `InputDiagnosticsController` using public Android `InputManager`/`InputDevice` APIs. It refreshes the registry on attach/change/detach, observes real `KeyEvent` and `MotionEvent` instances delivered to the Lab window, keeps a bounded 200-entry event log, tracks down/repeat/up state per device/key, and clears held-key state on device removal or Activity stop. The Diagnostics destination now shows detected devices, motion-range metadata, current pressed keys, and recent event summaries. Pure axis utilities support centered and unipolar normalization, dead zones, inversion, axis swapping, and bounded sensitivity.
+
+The event monitor is intentionally **not system-wide**. It does not claim to receive events while another app is foregrounded; this is a diagnostic foundation for the upcoming dedicated labs, not a mapping engine. Event summaries do not store typed character text. Device descriptors are runtime observations and do not guarantee that a device will deliver events.
+
+Status: **SOURCE IMPLEMENTED / UNIT TESTS ADDED / ANDROID GRADLE BUILD NOT RUN / PHYSICAL DEVICE NOT VERIFIED**. Tests cover bounded logs, key state transitions and release, centered/unipolar axis normalization, and pair transforms. The GitHub Release workflow now maps the four repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_PASSWORD` in both signing-related steps.

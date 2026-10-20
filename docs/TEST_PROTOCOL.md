@@ -78,3 +78,14 @@ The Lab reports helper round-trip time, which includes command execution and res
 5. Navigate to another tab and back while waiting for the code. It must not silently reset discovery or reopen Developer options. Use the explicit “Reopen Developer options” button only when that is intended.
 6. Repeat with notification permission denied and with mDNS unavailable. The in-app waiting state must remain useful and manual host/pairing-port/connection-port fallback must still be accessible.
 7. Run an input probe with the Test Target open. Mark input delivery PASS only when the target visibly shows the corresponding touch/key/motion event.
+
+
+## Device Discovery & Diagnostics Core checks
+
+1. Open InputBridge Lab → Diagnostics and record the currently enumerated devices. Do not assume every enumerated device is an external peripheral; Android can expose built-in and virtual devices.
+2. Connect/disconnect a USB or Bluetooth keyboard/mouse/controller while the Lab Activity is visible. Confirm the device list refreshes and a DEVICE event appears. Check that a detached device's held keys are cleared.
+3. Focus the Lab Activity outside text fields. Press/release a hardware keyboard key and hold it long enough to produce repeats. Confirm DOWN, repeat count, and UP appear, and that another device's same key code is tracked separately.
+4. Focus the six-digit pairing-code field and type a test value only if needed for a controlled pairing attempt. Confirm key-event recording is paused while that field is focused; do not include any actual pairing code in screenshots or logs. Move focus away and verify recording resumes.
+5. Move/click/scroll a mouse and move each controller stick/trigger while the Lab Activity is foreground. Check source labels, button bitmask, and available axis names/values. A missing axis in a particular event is not proof that the hardware lacks it; consult the device's reported motion ranges.
+6. Leave the Activity or open another app. The Lab's monitor must unregister and clear pressed-key state. On return, monitoring restarts and the device registry refreshes. Events generated in another app are not captured by this monitor.
+7. Run `:lab:testDebugUnitTest` in the `Android Release` workflow. Record the workflow URL and commit before marking automated tests as passed.

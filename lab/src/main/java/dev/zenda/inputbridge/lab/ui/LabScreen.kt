@@ -60,6 +60,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -76,6 +77,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dev.zenda.inputbridge.lab.data.local.ProbeRunEntity
+import dev.zenda.inputbridge.lab.diagnostics.InputDiagnosticsSnapshot
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.text.DateFormat
 import java.util.Date
 
@@ -94,6 +98,7 @@ fun LabScreen(
     helperStatus: String,
     adbStatus: String,
     recentRuns: List<ProbeRunEntity>,
+    inputDiagnostics: InputDiagnosticsSnapshot,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onRefreshShizuku: () -> Unit,
@@ -119,7 +124,8 @@ fun LabScreen(
     onStartDirectActivation: () -> Unit,
     onRetryDirectDiscovery: () -> Unit,
     onRetryDirectConnection: () -> Unit,
-    onPairDetectedCode: (String) -> Unit
+    onPairDetectedCode: (String) -> Unit,
+    onPairingCodeFocusChanged: (Boolean) -> Unit
 ) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -253,6 +259,7 @@ fun LabScreen(
                         pairingCode = ""
                         onPairDetectedCode(code)
                     },
+                    onPairingCodeFocusChanged = onPairingCodeFocusChanged,
                     onPairManual = {
                         val code = pairingCode
                         pairingCode = ""
@@ -272,6 +279,7 @@ fun LabScreen(
                     helperStatus = helperStatus,
                     adbStatus = adbStatus,
                     recentRuns = recentRuns,
+                    inputDiagnostics = inputDiagnostics,
                     onOpenTarget = onOpenTarget
                 )
             }
@@ -427,6 +435,7 @@ private fun DirectAdbScreen(
     onRetryDiscovery: () -> Unit,
     onRetryConnection: () -> Unit,
     onPairDetectedCode: () -> Unit,
+    onPairingCodeFocusChanged: (Boolean) -> Unit,
     onPairManual: () -> Unit,
     onConnectManual: () -> Unit,
     onStartHelper: () -> Unit,
@@ -489,7 +498,7 @@ private fun DirectAdbScreen(
                 label = { Text("6-digit pairing code") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.onFocusChanged { onPairingCodeFocusChanged(it.isFocused) }.fillMaxWidth()
             )
             Button(
                 onClick = onPairDetectedCode,
@@ -554,12 +563,55 @@ private fun DiagnosticsScreen(
     helperStatus: String,
     adbStatus: String,
     recentRuns: List<ProbeRunEntity>,
+    inputDiagnostics: InputDiagnosticsSnapshot,
     onOpenTarget: () -> Unit
 ) {
     ContentColumn {
         ScreenHeading("Diagnostics", "Evidence over assumptions", "Use these reports to decide what has actually been verified.")
         StatusDetailCard("Shizuku helper", helperStatus, Icons.Filled.Security)
         StatusDetailCard("Direct ADB", adbStatus, Icons.Filled.Wifi)
+        SectionHeading("Detected input devices", "Detected from Android InputDevice APIs; detection does not mean an event has been received")
+        StatusDetailCard(
+            "Device monitor",
+            if (inputDiagnostics.isMonitoring) "Monitoring this app window · ${inputDiagnostics.devices.size} device(s) detected" else "Monitoring stopped · held-key state reset",
+            Icons.Filled.BugReport
+        )
+        if (inputDiagnostics.devices.isEmpty()) {
+            EmptyState("No input devices reported", "Connect a keyboard, mouse, game controller, or another supported device. Android may expose built-in or virtual devices too.")
+        } else {
+            inputDiagnostics.devices.take(20).forEach { device ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(device.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text("ID ${device.id} · ${if (device.isVirtual) "Virtual" else "Non-virtual"} · source 0x${device.sources.toString(16)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Vendor ${device.vendorId} · Product ${device.productId} · keyboard type ${device.keyboardType} · ${device.motionRanges.size} motion axis/range entries", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (device.motionRanges.isNotEmpty()) {
+                            Text(device.motionRanges.take(8).joinToString { "${it.axisName}[${"%.2f".format(Locale.US, it.min)}..${"%.2f".format(Locale.US, it.max)}]" }, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+        SectionHeading("Pressed keys", "State is based on KeyEvent actions received by this Activity and is cleared on detach/stop")
+        if (inputDiagnostics.pressedKeys.isEmpty()) {
+            Text("No keys currently held", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text(inputDiagnostics.pressedKeys.joinToString(" · ") { "${it.label} (device ${it.deviceId})" }, style = MaterialTheme.typography.bodyMedium)
+        }
+        val receivedInputEventCount = inputDiagnostics.events.count { it.category == "KEY" || it.category == "MOTION" }
+        SectionHeading("Live input event log", "${receivedInputEventCount} real input event(s) in the retained log · up to ${dev.zenda.inputbridge.lab.diagnostics.DiagnosticsPolicy.MAX_EVENTS} total entries · ${inputDiagnostics.droppedEventCount} older event(s) dropped")
+        if (receivedInputEventCount == 0) {
+            EmptyState("Waiting for input", "Focus this app and press a hardware key or move/click/scroll a mouse or controller. Events outside this app are not captured by this public-API diagnostic monitor.")
+        } else {
+            val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.US) }
+            inputDiagnostics.events.takeLast(30).asReversed().forEach { event ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text("${timeFormat.format(java.util.Date(event.timestampMillis))} · ${event.category} · device ${event.deviceId}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(event.summary, style = MaterialTheme.typography.bodySmall)
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Evidence checklist", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

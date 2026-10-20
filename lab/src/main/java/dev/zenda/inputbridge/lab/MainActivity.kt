@@ -19,6 +19,9 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.WindowManager
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +30,8 @@ import androidx.core.content.ContextCompat
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.lifecycleScope
 import dev.zenda.inputbridge.lab.adb.AdbConnectionManager
+import dev.zenda.inputbridge.lab.diagnostics.InputDiagnosticsController
+import dev.zenda.inputbridge.lab.diagnostics.InputDiagnosticsSnapshot
 import dev.zenda.inputbridge.lab.adb.AdbPairingNotificationService
 import dev.zenda.inputbridge.lab.adb.AdbDiscoveredEndpoint
 import dev.zenda.inputbridge.lab.adb.AdbServiceDiscovery
@@ -59,6 +64,8 @@ class MainActivity : ComponentActivity() {
     private val adbStatus = mutableStateOf("Not connected")
     private val darkThemeState = mutableStateOf(true)
     private val recentRuns = mutableStateOf<List<ProbeRunEntity>>(emptyList())
+    private val inputDiagnosticsSnapshot = mutableStateOf(InputDiagnosticsSnapshot())
+    private val inputDiagnosticsController by lazy { InputDiagnosticsController(applicationContext) }
     private val directStage = mutableStateOf("idle")
     private val pairingEndpoint = mutableStateOf<AdbDiscoveredEndpoint?>(null)
     private val connectionServiceEndpoint = mutableStateOf<AdbDiscoveredEndpoint?>(null)
@@ -203,6 +210,9 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             historyRepository.observeRecent(20).collect { records -> recentRuns.value = records }
         }
+        lifecycleScope.launch {
+            inputDiagnosticsController.state.collect { snapshot -> inputDiagnosticsSnapshot.value = snapshot }
+        }
         setContent {
             InputBridgeTheme(darkTheme = darkThemeState.value) {
                 LabScreen(
@@ -210,6 +220,7 @@ class MainActivity : ComponentActivity() {
                     helperStatus = helperStatus.value,
                     adbStatus = adbStatus.value,
                     recentRuns = recentRuns.value,
+                    inputDiagnostics = inputDiagnosticsSnapshot.value,
                     darkTheme = darkThemeState.value,
                     onToggleTheme = {
                         lifecycleScope.launch(Dispatchers.IO) { uiPreferences.toggleDarkTheme() }
@@ -237,10 +248,40 @@ class MainActivity : ComponentActivity() {
                     onStartDirectActivation = { startDirectActivation() },
                     onRetryDirectDiscovery = { retryDirectDiscovery() },
                     onRetryDirectConnection = { retryDirectConnectionDiscovery() },
-                    onPairDetectedCode = { code -> pairWithDiscoveredCode(code) }
+                    onPairDetectedCode = { code -> pairWithDiscoveredCode(code) },
+                    onPairingCodeFocusChanged = { focused -> inputDiagnosticsController.setSensitiveTextEntryActive(focused) }
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        inputDiagnosticsController.start()
+    }
+
+    override fun onStop() {
+        inputDiagnosticsController.stop()
+        super.onStop()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        inputDiagnosticsController.recordKeyEvent(event)
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        inputDiagnosticsController.recordMotionEvent(event)
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // Mouse button presses can arrive through the touch dispatch path; do not record
+        // ordinary touchscreen taps here as keyboard/mouse/controller diagnostics.
+        if ((event.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
+            inputDiagnosticsController.recordMotionEvent(event)
+        }
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onResume() {
